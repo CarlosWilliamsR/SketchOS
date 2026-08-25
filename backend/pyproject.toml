@@ -1,0 +1,31 @@
+[project]
+name = "sketchos-backend"
+version = "0.1.0"
+description = "SketchOS backend: FastAPI/FastMCP service owning the ArchitecturalDSL and driving Blender via blender-mcp"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.9.0,<2",
+    "fastapi",
+    "uvicorn",
+    "pydantic>=2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["setuptools>=77.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py"]
+testpaths = ["tests"]
