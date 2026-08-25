@@ -1,0 +1,28 @@
+{
+  "name": "sketchos-validator-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser UI for the SketchOS geometry validator: upload a .obj, inspect it in a SketchUp-style 3D viewport, review violations.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@astrojs/react": "^4.0.0",
+    "@react-three/drei": "^10.0.0",
+    "@react-three/fiber": "^9.0.0",
+    "astro": "^5.0.0",
+    "react": "~19.0.0",
+    "react-dom": "~19.0.0",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.170.0",
+    "vitest": "^4.1.11"
+  }
+}
