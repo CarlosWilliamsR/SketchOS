@@ -1,0 +1,7 @@
+build/
+*.iso
+*.bin
+*.o
+.env
+.engram/
+.atl/
