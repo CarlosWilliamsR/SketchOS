@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import GeometryScene from './GeometryScene.jsx';
-import { fetchRules, validateGeometry, autocorrect } from '../lib/api.js';
+import { fetchRules, validateGeometry, autocorrect, generateGeometry } from '../lib/api.js';
 
 const PHASES = { idle: 'idle', loading: 'loading', loaded: 'loaded', empty: 'empty', error: 'error' };
 
@@ -26,6 +26,9 @@ export default function ValidatorDashboard() {
   const [fileName, setFileName] = useState(null);
   const [error, setError] = useState(null);
   const [dsl, setDsl] = useState('');
+  const [generationPrompt, setGenerationPrompt] = useState('');
+  const [generationImage, setGenerationImage] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +74,31 @@ export default function ValidatorDashboard() {
       setError('The DSL payload is not valid JSON.');
       setPhase(PHASES.error);
       return;
+    }
+
+    async function toBase64(file) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = '';
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary);
+    }
+
+    async function handleGenerateGeometry() {
+      if (!generationImage) {
+        setError('Select an image first.');
+        return;
+      }
+      setError(null);
+      setIsGenerating(true);
+      try {
+        const image = await toBase64(generationImage);
+        const response = await generateGeometry(image, generationPrompt);
+        setDsl(JSON.stringify(response.architecture ?? {}, null, 2));
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setIsGenerating(false);
+      }
     }
     setError(null);
     setPhase(PHASES.loading);
@@ -183,9 +211,36 @@ export default function ValidatorDashboard() {
             className="button"
             type="button"
             onClick={handleAutocorrect}
-            disabled={phase === PHASES.loading}
+            disabled={phase === PHASES.loading || isGenerating}
           >
             Autocorrect &amp; re-validate
+          </button>
+        </section>
+        <section className="panel-section">
+          <h2>Generate volumes</h2>
+          <p className="hint">Upload a sketch image and optional prompt to generate ArchitectureDSL volumes.</p>
+          <textarea
+            className="prompt-editor"
+            rows={3}
+            value={generationPrompt}
+            onChange={(event) => setGenerationPrompt(event.target.value)}
+            placeholder="Describe desired volumes (optional)"
+          />
+          <label className="upload-control sketch-upload-control">
+            Upload sketch image
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(event) => setGenerationImage(event.target.files?.[0] ?? null)}
+            />
+          </label>
+          <button
+            className="button"
+            type="button"
+            onClick={handleGenerateGeometry}
+            disabled={phase === PHASES.loading || isGenerating}
+          >
+            {isGenerating ? 'Generating…' : 'Generate volumes'}
           </button>
         </section>
       </aside>

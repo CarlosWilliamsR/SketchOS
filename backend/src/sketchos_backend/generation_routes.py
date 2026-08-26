@@ -124,6 +124,7 @@ class TimeoutError(GenerationError):
 class GenerationRequest(BaseModel):
     """Request payload for /generate-geometry endpoint."""
     image: str  # Base64-encoded PNG
+    user_prompt: str = ""  # Optional user intent to guide volume generation
 
 
 class GenerationResponse(BaseModel):
@@ -251,7 +252,7 @@ def _get_api_key() -> str:
     return api_key
 
 
-async def _pass1_morphology(image_bytes: bytes, api_key: str) -> str:
+async def _pass1_morphology(image_bytes: bytes, api_key: str, user_prompt: str = "") -> str:
     """Pass 1: Vision to plain-text morphological deconstruction.
     
     Args:
@@ -290,6 +291,11 @@ async def _pass1_morphology(image_bytes: bytes, api_key: str) -> str:
             "cantilevered elements (Z>0), slab floors, spatial relationships. "
             "Output plain-text deconstruction."
         )
+        if user_prompt.strip():
+            prompt += (
+                "\n\nAdditional user intent to incorporate when extracting masses "
+                f"and volumes: {user_prompt.strip()}"
+            )
         
         # Wrap with timeout (45s for vision API request)
         try:
@@ -309,7 +315,9 @@ async def _pass1_morphology(image_bytes: bytes, api_key: str) -> str:
         raise GeminiAPIError(f"Gemini API failure: {str(e)}")
 
 
-def _build_pass2_prompt(morphology: str, retry_error: str | None = None) -> str:
+def _build_pass2_prompt(
+    morphology: str, retry_error: str | None = None, user_prompt: str = ""
+) -> str:
     """Build Pass 2 prompt with few-shot examples and optional retry feedback.
     
     Args:
@@ -336,6 +344,8 @@ def _build_pass2_prompt(morphology: str, retry_error: str | None = None) -> str:
         f"walls, floors, openings, volumes, relationships. "
         f"Follow the exact schema from the examples above."
     )
+    if user_prompt.strip():
+        instruction += f"\n\nAdditional user prompt: {user_prompt.strip()}"
     
     # Add retry feedback if this is a second attempt
     if retry_error:
@@ -348,7 +358,12 @@ def _build_pass2_prompt(morphology: str, retry_error: str | None = None) -> str:
     return instruction
 
 
-async def _pass2_schema_json(morphology: str, api_key: str, retry_error: str | None = None) -> dict[str, Any]:
+async def _pass2_schema_json(
+    morphology: str,
+    api_key: str,
+    retry_error: str | None = None,
+    user_prompt: str = "",
+) -> dict[str, Any]:
     """Pass 2: Text + schema → structured ArchitectureModel JSON.
     
     Args:
@@ -384,7 +399,7 @@ async def _pass2_schema_json(morphology: str, api_key: str, retry_error: str | N
         )
         
         # Build prompt with few-shots and optional retry feedback
-        prompt = _build_pass2_prompt(morphology, retry_error)
+        prompt = _build_pass2_prompt(morphology, retry_error, user_prompt=user_prompt)
         
         # Wrap with timeout (45s for JSON generation)
         try:
@@ -408,7 +423,7 @@ async def _pass2_schema_json(morphology: str, api_key: str, retry_error: str | N
         raise GeminiAPIError(f"Gemini API failure in Pass 2: {str(e)}")
 
 
-async def _validate_and_retry(morphology: str, api_key: str) -> Any:
+async def _validate_and_retry(morphology: str, api_key: str, user_prompt: str = "") -> Any:
     """Validate Pass 2 output and retry once with error feedback if validation fails.
     
     This implements the self-healing retry logic: if Pydantic validation fails,
@@ -430,7 +445,9 @@ async def _validate_and_retry(morphology: str, api_key: str) -> Any:
     
     # First attempt: Pass 2 without error feedback
     try:
-        arch_json = await _pass2_schema_json(morphology, api_key, retry_error=None)
+        arch_json = await _pass2_schema_json(
+            morphology, api_key, retry_error=None, user_prompt=user_prompt
+        )
         return ArchitectureModel.model_validate(arch_json)
     except ValidationError as e:
         first_error = str(e)
@@ -438,7 +455,9 @@ async def _validate_and_retry(morphology: str, api_key: str) -> Any:
         
         # Retry with error feedback injected into Pass 2 prompt
         try:
-            arch_json = await _pass2_schema_json(morphology, api_key, retry_error=first_error)
+            arch_json = await _pass2_schema_json(
+                morphology, api_key, retry_error=first_error, user_prompt=user_prompt
+            )
             return ArchitectureModel.model_validate(arch_json)
         except ValidationError as e2:
             # Both attempts failed - return structured error with both attempts
@@ -450,7 +469,7 @@ async def _validate_and_retry(morphology: str, api_key: str) -> Any:
             )
 
 
-async def _execute_blender(architecture: Any) -> str:
+async def _execute_blender(architecture: Any, user_prompt: str = "") -> str:
     """Execute Blender code generation and MCP call with AsyncIO lock.
     
     CRITICAL: BlenderMCPClient uses stdio transport (shared stdin/stdout pipes).
@@ -481,7 +500,7 @@ async def _execute_blender(architecture: Any) -> str:
             client = BlenderMCPClient()
             try:
                 result = await asyncio.wait_for(
-                    client.execute(blender_code),
+                    client.execute(blender_code, user_prompt=user_prompt),
                     timeout=BLENDER_TIMEOUT
                 )
                 
@@ -524,6 +543,7 @@ async def generate_geometry(request: GenerationRequest) -> dict[str, Any]:
         HTTPException: With appropriate status codes (400/422/502/503/504)
     """
     try:
+        user_prompt = request.user_prompt.strip()
         # Stage 1: Decode Base64 image
         try:
             image_bytes = base64.b64decode(request.image)
@@ -544,7 +564,7 @@ async def generate_geometry(request: GenerationRequest) -> dict[str, Any]:
         
         # Stage 3: Pass 1 — Vision → morphology
         try:
-            morphology = await _pass1_morphology(image_bytes, api_key)
+            morphology = await _pass1_morphology(image_bytes, api_key, user_prompt=user_prompt)
             logger.info(f"Pass 1 completed: {len(morphology)} chars of morphology")
         except TimeoutError as e:
             raise HTTPException(
@@ -560,7 +580,7 @@ async def generate_geometry(request: GenerationRequest) -> dict[str, Any]:
         # Stage 4: Pass 2 + Validation with self-healing retry
         # This orchestrates: Pass 2 → validate → (if fail) Pass 2 with error → validate
         try:
-            architecture = await _validate_and_retry(morphology, api_key)
+            architecture = await _validate_and_retry(morphology, api_key, user_prompt=user_prompt)
             logger.info("Pass 2 + validation completed successfully")
         except ValidationFailedError as e:
             raise HTTPException(
@@ -580,7 +600,7 @@ async def generate_geometry(request: GenerationRequest) -> dict[str, Any]:
         
         # Stage 5: Blender execution (with AsyncIO lock)
         try:
-            blender_result = await _execute_blender(architecture)
+            blender_result = await _execute_blender(architecture, user_prompt=user_prompt)
             logger.info("Blender execution completed")
         except TimeoutError as e:
             raise HTTPException(

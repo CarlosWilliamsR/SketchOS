@@ -6,7 +6,7 @@
 // boundary.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchRules, validateGeometry, autocorrect, ApiError } from './api.js';
+import { fetchRules, validateGeometry, autocorrect, generateGeometry, ApiError } from './api.js';
 
 let fetchMock;
 
@@ -78,6 +78,25 @@ describe('autocorrect', () => {
     expect(JSON.parse(options.body)).toEqual(dsl);
 
     expect(result).toEqual({ status: 'violations', report: {}, fixes: [{ wall_id: 'w1' }] });
+  });
+
+  describe('generateGeometry', () => {
+    it('POSTs image + user_prompt JSON to /api/generate-geometry', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ architecture: { volumes: [] } }));
+
+      const result = await generateGeometry('ZmFrZS1pbWFnZQ==', 'crea volumenes');
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, options] = fetchMock.mock.calls[0];
+      expect(url).toBe('/api/generate-geometry');
+      expect(options.method).toBe('POST');
+      expect(options.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(options.body)).toEqual({
+        image: 'ZmFrZS1pbWFnZQ==',
+        user_prompt: 'crea volumenes',
+      });
+      expect(result).toEqual({ architecture: { volumes: [] } });
+    });
   });
 });
 
