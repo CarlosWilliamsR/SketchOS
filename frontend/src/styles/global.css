@@ -1,14 +1,44 @@
+/* CAD/BIM dark studio theme.
+   All colors, spacing, and typography reference :root custom properties so
+   future palette changes only touch the :root block. */
+
 :root {
-  /* SketchUp-style palette: dark bluish-gray viewport, light UI panel. */
-  --viewport-bg: #3a3d41;
+  /* -- Dark palette -------------------------------------------------- */
+  --bg-primary: #0b0f19;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1e293b;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --border: #334155;
+  --pass: #22c55e;
+  --violation: #ef4444;
+
+  /* Viewport-specific (keeps old var names for selector stability) */
+  --viewport-bg: #0b0f19;
   --viewport-grid: #4a4d52;
-  --panel-bg: #f5f5f5;
-  --panel-border: #c9ccd0;
-  --accent: #1a73e8;
-  --text: #202124;
-  --muted: #5f6368;
-  --pass: #2e7d32;
-  --violation: #c62828;
+
+  /* Panel aliases — maps to bg-secondary so old selectors still work */
+  --panel-bg: var(--bg-secondary);
+  --panel-border: var(--border);
+  --text: var(--text-primary);
+  --muted: var(--text-muted);
+
+  /* -- Typography ---------------------------------------------------- */
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* -- Spacing scale ------------------------------------------------- */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
 }
 
 * {
@@ -20,10 +50,9 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
-  color: var(--text);
-  background: var(--panel-bg);
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-primary);
 }
 
 /* App shell: side panel (controls / violations) + 3D viewport. */
@@ -34,19 +63,20 @@ body {
 }
 
 .side-panel {
-  background: var(--panel-bg);
-  border-right: 1px solid var(--panel-border);
-  padding: 16px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  padding: var(--space-md);
   overflow-y: auto;
 }
 
 .side-panel h1 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-sm);
   font-size: 1.25rem;
+  color: var(--text-primary);
 }
 
 .side-panel p {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -59,20 +89,20 @@ body {
 
 /* ---- Side panel sections ---- */
 .panel-section {
-  margin-top: 16px;
+  margin-top: var(--space-md);
 }
 
 .panel-section h2 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-sm);
   font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .hint {
-  margin: 0 0 8px;
-  color: var(--muted);
+  margin: 0 0 var(--space-sm);
+  color: var(--text-muted);
   font-size: 0.8rem;
 }
 
@@ -86,13 +116,14 @@ body {
 .upload-control {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border: 1px solid var(--panel-border);
+  gap: var(--space-sm);
+  padding: var(--space-sm) 14px;
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: #fff;
+  background: var(--bg-tertiary);
   cursor: pointer;
   font-size: 0.9rem;
+  color: var(--text-primary);
 }
 
 .upload-control:hover {
@@ -117,7 +148,7 @@ body {
 }
 
 .rules dt {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .rules dd {
@@ -128,7 +159,7 @@ body {
 
 /* ---- Status banner ---- */
 .status-banner {
-  padding: 8px 12px;
+  padding: var(--space-sm) 12px;
   border-radius: 4px;
   font-size: 0.9rem;
   font-weight: 600;
@@ -136,12 +167,12 @@ body {
 }
 
 .status-banner.pass {
-  background: #e6f4ea;
+  background: var(--bg-secondary);
   color: var(--pass);
 }
 
 .status-banner.violations {
-  background: #fce8e6;
+  background: var(--bg-secondary);
   color: var(--violation);
 }
 
@@ -156,47 +187,50 @@ body {
 .violation {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 2px 8px;
-  padding: 8px;
-  border: 1px solid var(--panel-border);
+  gap: 2px var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
   font-size: 0.85rem;
+  background: var(--bg-tertiary);
 }
 
 .violation-rule {
   color: var(--violation);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
 }
 
 .violation-measure {
   grid-column: 1 / -1;
-  color: var(--muted);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .fix-list li {
   padding: 4px 0;
   font-size: 0.82rem;
-  color: var(--muted);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 /* ---- DSL editor + button ---- */
 .dsl-editor {
   width: 100%;
-  margin-bottom: 8px;
-  padding: 8px;
-  border: 1px solid var(--panel-border);
+  margin-bottom: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
   resize: vertical;
 }
 
 .button {
-  padding: 8px 14px;
+  padding: var(--space-sm) 14px;
   border: none;
   border-radius: 4px;
   background: var(--accent);
@@ -206,7 +240,7 @@ body {
 }
 
 .button:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--accent-hover);
 }
 
 .button:disabled {
@@ -223,16 +257,16 @@ body {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: #d7dade;
+  color: var(--text-secondary);
   text-align: center;
-  padding: 24px;
+  padding: var(--space-lg);
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #6f747a;
-  border-top-color: #d7dade;
+  border: 3px solid var(--border);
+  border-top-color: var(--text-secondary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

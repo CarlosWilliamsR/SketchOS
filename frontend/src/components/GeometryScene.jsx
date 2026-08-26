@@ -120,7 +120,7 @@ export default function GeometryScene({ objText, report }) {
       camera={{ position: [10, 8, 10], fov: 45, near: 0.1, far: 10000 }}
       gl={{ antialias: true }}
     >
-      <color attach="background" args={['#3a3d41']} />
+      <color attach="background" args={['#0b0f19']} />
       <ambientLight intensity={0.7} />
       <directionalLight position={[10, 20, 5]} intensity={1.2} />
       <Model objText={objText} report={report} />
