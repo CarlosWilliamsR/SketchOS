@@ -69,3 +69,20 @@ export function autocorrect(dsl) {
     body: JSON.stringify(dsl),
   });
 }
+
+/**
+ * Generate architecture from a sketch image and optional text prompt.
+ * @param {string} imageBase64 Base64-encoded image payload.
+ * @param {string} userPrompt Optional natural-language guidance.
+ * @returns {Promise<{architecture: object}>}
+ */
+export function generateGeometry(imageBase64, userPrompt = '') {
+  return request('/generate-geometry', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      image: imageBase64,
+      user_prompt: userPrompt,
+    }),
+  });
+}

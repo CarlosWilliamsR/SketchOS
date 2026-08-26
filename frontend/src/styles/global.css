@@ -229,6 +229,25 @@ body {
   resize: vertical;
 }
 
+.prompt-editor {
+  width: 100%;
+  margin-bottom: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.sketch-upload-control {
+  display: flex;
+  width: 100%;
+  margin-bottom: var(--space-sm);
+}
+
 .button {
   padding: var(--space-sm) 14px;
   border: none;

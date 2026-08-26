@@ -99,6 +99,49 @@ class TestAPIKeyValidation:
                 "GOOGLE_API_KEY" in detail.get("detail", ""))
 
 
+class TestUserPromptForwarding:
+    """Test optional user prompt propagation through generation pipeline."""
+
+    def test_user_prompt_is_forwarded_to_pipeline_and_blender(self, monkeypatch):
+        """`user_prompt` should be passed to Pass 1, Pass 2 validation, and Blender execute."""
+        from sketchos_backend import generation_routes
+        from sketchos_backend.arch_dsl import ArchitectureModel
+
+        captured: dict[str, str] = {}
+
+        async def fake_pass1(image_bytes: bytes, api_key: str, user_prompt: str = "") -> str:
+            captured["pass1"] = user_prompt
+            return "morphology"
+
+        async def fake_validate(
+            morphology: str, api_key: str, user_prompt: str = ""
+        ) -> ArchitectureModel:
+            captured["validate"] = user_prompt
+            return ArchitectureModel(
+                walls=[], floors=[], openings=[], volumes=[], relationships=[]
+            )
+
+        async def fake_execute(architecture: Any, user_prompt: str = "") -> str:
+            captured["blender"] = user_prompt
+            return "Blender OK"
+
+        monkeypatch.setattr(generation_routes, "_get_api_key", lambda: "fake-key")
+        monkeypatch.setattr(generation_routes, "_pass1_morphology", fake_pass1)
+        monkeypatch.setattr(generation_routes, "_validate_and_retry", fake_validate)
+        monkeypatch.setattr(generation_routes, "_execute_blender", fake_execute)
+
+        client = TestClient(app)
+        response = client.post(
+            "/generate-geometry",
+            json={"image": SAMPLE_PNG_BASE64, "user_prompt": "crea dos volumenes unidos"},
+        )
+
+        assert response.status_code == 200
+        assert captured["pass1"] == "crea dos volumenes unidos"
+        assert captured["validate"] == "crea dos volumenes unidos"
+        assert captured["blender"] == "crea dos volumenes unidos"
+
+
 class TestPass1Morphology:
     """Test Pass 1 vision-to-morphology with mocked Gemini."""
 
