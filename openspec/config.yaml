@@ -1,0 +1,75 @@
+# SketchOS OpenSpec Configuration
+# Generated: 2026-08-25
+# Mode: hybrid (OpenSpec + Engram)
+
+project: SketchOS
+version: "0.1.0"
+
+context: |
+  Multi-component OS project: bare-metal x86 kernel (C/asm), Python backend (FastAPI/FastMCP),
+  TypeScript frontend (Astro/React/Three.js), Go geometry validator. Backend owns ArchitecturalDSL
+  and drives Blender via blender-mcp. Frontend provides web UI for validator with 3D viewport.
+
+stack:
+  kernel:
+    language: C
+    assembler: nasm
+    toolchain: i686-elf-gcc
+    linker: ld
+  backend:
+    language: Python
+    framework: FastAPI
+    package_manager: uv
+    runtime: ">=3.10"
+  frontend:
+    language: TypeScript
+    framework: Astro
+    ui: React
+    rendering: Three.js (@react-three/fiber)
+    build: Vite
+  validator:
+    language: Go
+    version: "1.26"
+
+testing:
+  strict_tdd: true
+  go:
+    runner: go test
+    coverage: go test -cover
+    unit: "✅"
+  python:
+    runner: pytest
+    unit: "✅"
+  typescript:
+    runner: vitest
+    coverage: vitest --coverage
+    unit: "✅"
+
+quality:
+  go:
+    formatter: gofmt
+    type_checker: built-in
+  python:
+    # No linter/formatter detected in pyproject.toml
+  typescript:
+    # No linter/formatter detected in package.json
+
+sdd:
+  phases:
+    explore: sdd-explore
+    propose: sdd-propose
+    spec: sdd-spec
+    design: sdd-design
+    tasks: sdd-tasks
+    apply: sdd-apply
+    verify: sdd-verify
+    archive: sdd-archive
+  
+  rules:
+    - Every change starts with proposal (intent + scope + approach)
+    - Specs define delta requirements with Given/When/Then scenarios
+    - Design provides technical architecture and approach
+    - Tasks break design into implementation units
+    - Apply executes tasks; verify proves implementation matches specs
+    - Archive syncs delta specs after successful verification
+    - Strict TDD enforced: tests must exist and pass before archival

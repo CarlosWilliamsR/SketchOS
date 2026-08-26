@@ -12,6 +12,7 @@ from fastapi import FastAPI
 
 from sketchos_backend.server import mcp
 from sketchos_backend.validator_routes import router as validator_router
+from sketchos_backend.generation_routes import router as generation_router
 
 app = FastAPI(
     title="SketchOS Backend",
@@ -24,6 +25,9 @@ app.mount("/mcp", mcp.streamable_http_app())
 
 # Register the validator endpoints (subprocess-backed, never shell).
 app.include_router(validator_router)
+
+# Register the generation endpoints (vision-to-architecture pipeline).
+app.include_router(generation_router)
 
 
 def main() -> None:
