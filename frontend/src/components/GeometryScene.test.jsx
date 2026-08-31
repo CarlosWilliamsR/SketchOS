@@ -8,7 +8,7 @@
 
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import * as THREE from 'three';
 import GeometryScene from './GeometryScene.jsx';
 import { EMPTY_METRIC } from '../lib/viewport.js';
@@ -116,5 +116,91 @@ describe('GeometryScene clip control interaction', () => {
     expect(zCheckbox).not.toBeChecked();
     zCheckbox.click();
     expect(zCheckbox).toBeChecked();
+  });
+});
+
+describe('GeometryScene camera preset active state', () => {
+  const presetNames = /top-down plan|front elevation|side elevation|isometric/i;
+
+  it('marks no preset active before any selection', () => {
+    render(<GeometryScene objText="v 0 0 0" report={{}} />);
+    const buttons = screen.getAllByRole('button', { name: presetNames });
+    expect(buttons).toHaveLength(4);
+    for (const button of buttons) {
+      expect(button).toHaveAttribute('aria-pressed', 'false');
+    }
+  });
+
+  it('activates the clicked preset and moves the active state on re-click', () => {
+    render(<GeometryScene objText="v 0 0 0" report={{}} />);
+    const isometric = screen.getByRole('button', { name: /isometric/i });
+    const topDown = screen.getByRole('button', { name: /top-down plan/i });
+
+    // Click Isometric → it becomes the active preset.
+    fireEvent.click(isometric);
+    expect(isometric).toHaveAttribute('aria-pressed', 'true');
+    expect(isometric.className).toContain('active');
+    expect(topDown).toHaveAttribute('aria-pressed', 'false');
+
+    // Click Top-Down → active state moves; Isometric deactivates.
+    fireEvent.click(topDown);
+    expect(topDown).toHaveAttribute('aria-pressed', 'true');
+    expect(isometric).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('keeps exactly one preset active after a selection', () => {
+    render(<GeometryScene objText="v 0 0 0" report={{}} />);
+    fireEvent.click(screen.getByRole('button', { name: /isometric/i }));
+
+    const active = screen
+      .getAllByRole('button', { name: presetNames })
+      .filter((button) => button.getAttribute('aria-pressed') === 'true');
+
+    expect(active).toHaveLength(1);
+    expect(active[0]).toHaveAccessibleName(/isometric/i);
+  });
+});
+
+describe('GeometryScene clip plane slider updates cut', () => {
+  it('moves the Z clip plane constant when the slider changes', () => {
+    // Provide a real mesh so the per-material clipping assignment is observable.
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial(),
+    );
+    const group = new THREE.Group();
+    group.add(mesh);
+    mockState.objGroup = group;
+
+    render(<GeometryScene objText="v 0 0 0" report={{}} />);
+
+    // Enable the Z clip toggle.
+    const zToggle = screen.getByRole('checkbox', { name: /z clip/i });
+    fireEvent.click(zToggle);
+    expect(zToggle).toBeChecked();
+
+    // The Z slider starts at the model origin cut.
+    const zSlider = screen.getByRole('slider', { name: /z cut/i });
+    expect(zSlider.value).toBe('0');
+
+    // Drag the Z slider to a new cut position (within the ±maxDim range).
+    fireEvent.change(zSlider, { target: { value: '0.5' } });
+    expect(zSlider.value).toBe('0.5');
+
+    // The material's active Z clip plane now carries the updated constant.
+    expect(mesh.material.clipping).toBe(true);
+    expect(mesh.material.clippingPlanes).toHaveLength(1);
+    expect(mesh.material.clippingPlanes[0].constant).toBe(0.5);
+  });
+
+  it('keeps Z and Y cut positions independent', () => {
+    render(<GeometryScene objText="v 0 0 0" report={{}} />);
+    const zSlider = screen.getByRole('slider', { name: /z cut/i });
+    const ySlider = screen.getByRole('slider', { name: /y cut/i });
+
+    fireEvent.change(zSlider, { target: { value: '0.4' } });
+
+    expect(zSlider.value).toBe('0.4');
+    expect(ySlider.value).toBe('0');
   });
 });
