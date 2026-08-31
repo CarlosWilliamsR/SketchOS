@@ -16,6 +16,14 @@ export class ApiError extends Error {
 }
 
 async function request(path, options) {
+  // Inject BYOK header from localStorage on every request.
+  const apiKey = localStorage.getItem('gemini_api_key');
+  if (apiKey && apiKey.length > 0) {
+    if (!options) options = {};
+    if (!options.headers) options.headers = {};
+    options.headers['X-Gemini-Api-Key'] = apiKey;
+  }
+
   let response;
   try {
     response = await fetch(`/api${path}`, options);
