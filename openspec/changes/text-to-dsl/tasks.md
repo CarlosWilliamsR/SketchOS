@@ -34,9 +34,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Core Endpoint (PR 2)
 
-- [ ] 2.1 RED: integration tests `/generate-from-text` — 200 happy, 400 empty prompt, header key, 503, 422, 502, 504, retry (mock genai + BlenderMCPClient).
-- [ ] 2.2 GREEN: extract `_render_few_shot_examples()`; add `_build_text_prompt(user_prompt, retry_error)` (defaults directive + few-shot + "user description", NOT "morphological analysis"); optional `build_prompt` on `_pass2_schema_json`/`_validate_and_retry`.
-- [ ] 2.3 GREEN: `TextGenerationRequest(prompt=Field(min_length=1))` + `@router.post("/generate-from-text")` → `_get_api_key(header)` → `_validate_and_retry(..., build_prompt=_build_text_prompt)` → `_execute_blender`; error mapping mirrors image path (no 500).
+- [x] 2.1 RED: integration tests `/generate-from-text` — 200 happy, 400 empty prompt, header key, 503, 422, 502, 504, retry (mock genai + BlenderMCPClient).
+- [x] 2.2 GREEN: extract `_render_few_shot_examples()`; add `_build_text_prompt(user_prompt, retry_error)` (defaults directive + few-shot + "user description", NOT "morphological analysis"); optional `build_prompt` on `_pass2_schema_json`/`_validate_and_retry`.
+- [x] 2.3 GREEN: `TextGenerationRequest(prompt)` + `@router.post("/generate-from-text")` → `_get_api_key(header)` → `_validate_and_retry(..., build_prompt=_build_text_prompt)` → `_execute_blender`; error mapping mirrors image path (no 500).
 
 ## Phase 3: Frontend Integration (PR 3)
 

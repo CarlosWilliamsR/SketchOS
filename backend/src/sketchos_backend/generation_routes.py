@@ -1,22 +1,28 @@
-"""Vision-to-architecture pipeline with two-pass Gemini inference.
+"""Vision/text-to-architecture pipeline with two-pass Gemini inference.
 
-This module provides POST /generate-geometry endpoint that transforms Base64
-sketch images into validated ArchitecturalDSL JSON via two-pass Gemini
-processing with commercial-grade error containment.
+This module provides two endpoints:
+- POST /generate-geometry — transforms Base64 sketch images into validated
+  ArchitecturalDSL JSON via two-pass Gemini processing (vision + schema JSON).
+- POST /generate-from-text — transforms a natural-language prompt into the same
+  validated ArchitecturalDSL JSON, skipping Base64 decode and Pass 1 vision.
 
 ## Architecture
 
-The pipeline consists of five stages:
+The image pipeline consists of five stages:
 1. **Base64 Decode**: Validate and decode PNG image from Base64
 2. **Pass 1 (Morphology)**: Vision API → plain-text spatial analysis
 3. **Pass 2 (Schema JSON)**: Text + response_schema → ArchitectureModel JSON
 4. **Validation + Retry**: Pydantic validation with self-healing retry on failure
 5. **Blender Execution**: Generate and execute Blender code via MCP (with AsyncIO lock)
 
+The text pipeline reuses stages 3–5 verbatim: the raw prompt is fed through
+``_build_text_prompt`` (defaults directive + few-shot examples + user
+description) into Pass 2, then through validation/retry and Blender.
+
 ## Error Handling
 
 Structured HTTP errors:
-- 400: Invalid Base64 encoding
+- 400: Invalid Base64 encoding (image) or empty prompt (text)
 - 422: Validation failed after retry (with detailed error feedback)
 - 502: Gemini API failure or Blender execution error
 - 503: No API key configured (provider unavailable)
@@ -52,6 +58,7 @@ app.include_router(router)
 ```
 
 POST /generate-geometry with `{"image": "<base64-png>"}` → 200 with architecture JSON
+POST /generate-from-text with `{"prompt": "<natural language>"}` → 200 with architecture JSON
 """
 
 from __future__ import annotations
@@ -64,9 +71,11 @@ import logging
 import os
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
+
+from sketchos_backend.defaults import render_defaults_directive
 
 
 # Configure logging
@@ -135,6 +144,16 @@ class TimeoutError(GenerationError):
 class GenerationRequest(BaseModel):
     """Request payload for /generate-geometry endpoint."""
     image: str  # Base64-encoded PNG
+
+
+class TextGenerationRequest(BaseModel):
+    """Request payload for /generate-from-text endpoint.
+
+    ``prompt`` is required (FastAPI returns 422 when absent); empty/whitespace
+    prompts are rejected with 400 in the handler to mirror the image path's
+    input-error code.
+    """
+    prompt: str
 
 
 class GenerationResponse(BaseModel):
@@ -334,6 +353,21 @@ async def _pass1_morphology(image_bytes: bytes, api_key: str) -> str:
         raise GeminiAPIError(f"Gemini API failure: {str(e)}")
 
 
+def _render_few_shot_examples() -> str:
+    """Serialize ``FEW_SHOT_EXAMPLES`` into a prompt-ready text block.
+
+    Shared by both prompt builders so the image and text paths stay in sync on
+    the example format.
+    """
+    import json
+
+    examples_text = "Here are example architectural analyses:\n\n"
+    for i, example in enumerate(FEW_SHOT_EXAMPLES, 1):
+        examples_text += f"Example {i}: {example['user_description']}\n"
+        examples_text += f"JSON Output:\n{json.dumps(example['architecture'], indent=2)}\n\n"
+    return examples_text
+
+
 def _build_pass2_prompt(morphology: str, retry_error: str | None = None) -> str:
     """Build Pass 2 prompt with few-shot examples and optional retry feedback.
     
@@ -344,13 +378,8 @@ def _build_pass2_prompt(morphology: str, retry_error: str | None = None) -> str:
     Returns:
         Formatted prompt string with examples and instructions
     """
-    import json
-    
     # Start with few-shot examples
-    examples_text = "Here are example architectural analyses:\n\n"
-    for i, example in enumerate(FEW_SHOT_EXAMPLES, 1):
-        examples_text += f"Example {i}: {example['user_description']}\n"
-        examples_text += f"JSON Output:\n{json.dumps(example['architecture'], indent=2)}\n\n"
+    examples_text = _render_few_shot_examples()
     
     # Build main instruction
     instruction = (
@@ -373,13 +402,55 @@ def _build_pass2_prompt(morphology: str, retry_error: str | None = None) -> str:
     return instruction
 
 
-async def _pass2_schema_json(morphology: str, api_key: str, retry_error: str | None = None) -> dict[str, Any]:
+def _build_text_prompt(user_prompt: str, retry_error: str | None = None) -> str:
+    """Build the natural-language Pass 2 prompt for the text-to-architecture path.
+
+    Unlike ``_build_pass2_prompt`` (image path, "morphological analysis" wording),
+    this describes the user's plain-language request and injects the env-overridable
+    defaults directive so a dimension-less prompt still produces a valid model.
+
+    Args:
+        user_prompt: Raw natural-language description from the client.
+        retry_error: Optional Pydantic validation error from a previous attempt.
+
+    Returns:
+        Formatted prompt string with defaults, few-shot examples, and the user
+        description.
+    """
+    instruction = (
+        f"{render_defaults_directive()}\n\n"
+        f"{_render_few_shot_examples()}"
+        f"Now, based on the user's natural-language description:\n\n"
+        f"{user_prompt}\n\n"
+        f"Generate a complete ArchitectureModel JSON with all required fields: "
+        f"walls, floors, openings, volumes, relationships. "
+        f"Follow the exact schema from the examples above."
+    )
+
+    if retry_error:
+        instruction += (
+            f"\n\nPREVIOUS ATTEMPT FAILED with error:\n{retry_error}\n\n"
+            f"Please correct the error and ensure all required fields are present "
+            f"and valid according to the schema."
+        )
+
+    return instruction
+
+
+async def _pass2_schema_json(
+    morphology: str,
+    api_key: str,
+    retry_error: str | None = None,
+    build_prompt=_build_pass2_prompt,
+) -> dict[str, Any]:
     """Pass 2: Text + schema → structured ArchitectureModel JSON.
     
     Args:
         morphology: Plain-text morphology from Pass 1
         api_key: Google API key for Gemini
         retry_error: Optional validation error feedback from previous attempt
+        build_prompt: Prompt builder (defaults to the image-path builder;
+            the text path passes ``_build_text_prompt``)
         
     Returns:
         Dictionary matching ArchitectureModel schema
@@ -409,7 +480,7 @@ async def _pass2_schema_json(morphology: str, api_key: str, retry_error: str | N
         )
         
         # Build prompt with few-shots and optional retry feedback
-        prompt = _build_pass2_prompt(morphology, retry_error)
+        prompt = build_prompt(morphology, retry_error)
         
         # Wrap with timeout (45s for JSON generation)
         try:
@@ -433,7 +504,11 @@ async def _pass2_schema_json(morphology: str, api_key: str, retry_error: str | N
         raise GeminiAPIError(f"Gemini API failure in Pass 2: {str(e)}")
 
 
-async def _validate_and_retry(morphology: str, api_key: str) -> Any:
+async def _validate_and_retry(
+    morphology: str,
+    api_key: str,
+    build_prompt=_build_pass2_prompt,
+) -> Any:
     """Validate Pass 2 output and retry once with error feedback if validation fails.
     
     This implements the self-healing retry logic: if Pydantic validation fails,
@@ -441,8 +516,10 @@ async def _validate_and_retry(morphology: str, api_key: str) -> Any:
     gives the model a chance to correct minor schema misunderstandings.
     
     Args:
-        morphology: Plain-text morphology from Pass 1
+        morphology: Plain-text morphology from Pass 1 (or the user prompt for
+            the text path)
         api_key: Google API key for Gemini
+        build_prompt: Prompt builder forwarded to ``_pass2_schema_json``
         
     Returns:
         Validated ArchitectureModel instance
@@ -455,7 +532,7 @@ async def _validate_and_retry(morphology: str, api_key: str) -> Any:
     
     # First attempt: Pass 2 without error feedback
     try:
-        arch_json = await _pass2_schema_json(morphology, api_key, retry_error=None)
+        arch_json = await _pass2_schema_json(morphology, api_key, retry_error=None, build_prompt=build_prompt)
         return ArchitectureModel.model_validate(arch_json)
     except ValidationError as e:
         first_error = str(e)
@@ -463,7 +540,7 @@ async def _validate_and_retry(morphology: str, api_key: str) -> Any:
         
         # Retry with error feedback injected into Pass 2 prompt
         try:
-            arch_json = await _pass2_schema_json(morphology, api_key, retry_error=first_error)
+            arch_json = await _pass2_schema_json(morphology, api_key, retry_error=first_error, build_prompt=build_prompt)
             return ArchitectureModel.model_validate(arch_json)
         except ValidationError as e2:
             # Both attempts failed - return structured error with both attempts
@@ -627,6 +704,96 @@ async def generate_geometry(request: GenerationRequest) -> dict[str, Any]:
         # Global exception containment - never return 500
         # All unexpected errors are wrapped as 502 with structured detail
         logger.exception("Unexpected error in generate_geometry")
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "Unexpected error", "detail": str(e)}
+        ) from e
+
+
+@router.post("/generate-from-text")
+async def generate_from_text(
+    request: TextGenerationRequest,
+    x_gemini_api_key: str | None = Header(default=None, alias="X-Gemini-Api-Key"),
+) -> dict[str, Any]:
+    """Transform a natural-language description into ArchitecturalDSL JSON.
+
+    Mirrors the image pipeline but skips Base64 decode and Pass 1 vision: the
+    prompt passes straight through to Pass 2 schema-forced JSON via
+    ``_build_text_prompt`` (defaults directive + few-shot + user description),
+    then through self-healing validation and Blender execution.
+
+    Args:
+        request: TextGenerationRequest with a natural-language ``prompt``.
+        x_gemini_api_key: Per-request BYOK key from the ``X-Gemini-Api-Key`` header.
+
+    Returns:
+        Dict with 'architecture' key containing ArchitectureModel.
+
+    Raises:
+        HTTPException: With appropriate status codes (400/422/502/503/504).
+    """
+    try:
+        # Stage 1: Reject empty/whitespace prompt (mirrors image-path 400).
+        if not request.prompt or not request.prompt.strip():
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Invalid prompt", "detail": "Prompt must not be empty"},
+            )
+
+        # Stage 2: Get API key (header → GOOGLE_API_KEY → GEMINI_API_KEY → 503).
+        try:
+            api_key = _get_api_key(header_key=x_gemini_api_key)
+        except ProviderUnavailableError as e:
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "Provider unavailable", "detail": e.detail}
+            ) from e
+
+        # Stage 3: Pass 2 + Validation with self-healing retry.
+        try:
+            architecture = await _validate_and_retry(
+                request.prompt, api_key, build_prompt=_build_text_prompt
+            )
+            logger.info("Text Pass 2 + validation completed successfully")
+        except ValidationFailedError as e:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "Validation failed", "detail": e.detail}
+            ) from e
+        except TimeoutError as e:
+            raise HTTPException(
+                status_code=504,
+                detail={"error": "Request timeout", "detail": e.detail, "pass": 2}
+            ) from e
+        except GeminiAPIError as e:
+            raise HTTPException(
+                status_code=502,
+                detail={"error": "Gemini API failure", "detail": e.detail}
+            ) from e
+
+        # Stage 4: Blender execution (with AsyncIO lock).
+        try:
+            await _execute_blender(architecture)
+            logger.info("Blender execution completed")
+        except TimeoutError as e:
+            raise HTTPException(
+                status_code=504,
+                detail={"error": "Blender execution timeout", "detail": e.detail}
+            ) from e
+        except GeminiAPIError as e:
+            raise HTTPException(
+                status_code=502,
+                detail={"error": "Blender execution failed", "detail": e.detail}
+            ) from e
+
+        # Return successful result
+        return {"architecture": architecture.model_dump()}
+
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
+    except Exception as e:
+        # Global exception containment - never return 500
+        logger.exception("Unexpected error in generate_from_text")
         raise HTTPException(
             status_code=502,
             detail={"error": "Unexpected error", "detail": str(e)}
