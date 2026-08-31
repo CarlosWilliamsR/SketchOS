@@ -19,7 +19,7 @@ Structured HTTP errors:
 - 400: Invalid Base64 encoding
 - 422: Validation failed after retry (with detailed error feedback)
 - 502: Gemini API failure or Blender execution error
-- 503: GOOGLE_API_KEY not configured (provider unavailable)
+- 503: No API key configured (provider unavailable)
 - 504: Timeout exceeded (45s Pass 1/2, 30s Blender)
 
 ## Concurrency Safety
@@ -36,9 +36,13 @@ ensures examples stay in sync with schema changes.
 
 ## Environment Variables
 
-- `GOOGLE_API_KEY` (required): Google Gemini API key (BYOK pattern)
+- `X-Gemini-Api-Key` header (optional): per-request BYOK key (text endpoint only)
+- `GOOGLE_API_KEY` (optional): Google Gemini API key (BYOK pattern)
+- `GEMINI_API_KEY` (optional): fallback Google Gemini API key
 
-If missing, endpoint returns 503 with structured error message.
+Resolution order: header → `GOOGLE_API_KEY` → `GEMINI_API_KEY`. If none is
+present, the endpoint returns 503 with a structured error message. The
+repo-root `.env` is auto-loaded at import via `python-dotenv`.
 
 ## Usage
 
@@ -62,6 +66,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from dotenv import load_dotenv
 
 
 # Configure logging
@@ -74,11 +79,17 @@ PASS2_TIMEOUT = 45.0  # Schema JSON generation timeout
 BLENDER_TIMEOUT = 30.0  # Existing BlenderMCPClient timeout (set by client itself)
 
 
-# Startup check: Warn if API key is missing
-if not os.getenv("GOOGLE_API_KEY"):
+# Load repo-root .env (BYOK keys) before any environment reads below.
+# find_dotenv() walks up from this module's file, so it resolves the repo-root
+# .env even when uvicorn runs from backend/.
+load_dotenv()
+
+
+# Startup check: Warn if no API key is resolvable.
+if not os.getenv("GOOGLE_API_KEY") and not os.getenv("GEMINI_API_KEY"):
     logger.warning(
-        "GOOGLE_API_KEY not configured — /generate-geometry endpoint will return 503. "
-        "Set GOOGLE_API_KEY environment variable to enable vision-to-architecture pipeline."
+        "No API key configured (GOOGLE_API_KEY or GEMINI_API_KEY) — generation "
+        "endpoints will return 503. Set one to enable generation."
     )
 
 
@@ -243,11 +254,25 @@ FEW_SHOT_EXAMPLES: list[dict[str, Any]] = [
 ]
 
 
-def _get_api_key() -> str:
-    """Get GOOGLE_API_KEY from environment or raise ProviderUnavailableError."""
-    api_key = os.getenv("GOOGLE_API_KEY")
+def _get_api_key(header_key: str | None = None) -> str:
+    """Resolve the Gemini API key: header → GOOGLE_API_KEY → GEMINI_API_KEY.
+
+    Args:
+        header_key: Per-request BYOK key from the ``X-Gemini-Api-Key`` header.
+
+    Returns:
+        The resolved API key.
+
+    Raises:
+        ProviderUnavailableError: If no key resolves (header or env).
+    """
+    if header_key:
+        return header_key
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ProviderUnavailableError("GOOGLE_API_KEY not configured")
+        raise ProviderUnavailableError(
+            "No API key configured (set GOOGLE_API_KEY or GEMINI_API_KEY)"
+        )
     return api_key
 
 

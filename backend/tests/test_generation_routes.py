@@ -45,8 +45,13 @@ class TestBase64Validation:
         assert "error" in detail
         assert "Base64" in detail["error"]
     
-    def test_base64_decode_empty_string(self):
+    def test_base64_decode_empty_string(self, monkeypatch):
         """Empty Base64 string should also fail gracefully."""
+        # Clear both keys so the endpoint stops at key resolution instead of
+        # attempting a real Gemini call (load_dotenv() may load GEMINI_API_KEY).
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
         client = TestClient(app)
         
         response = client.post(
@@ -58,8 +63,13 @@ class TestBase64Validation:
         # This should still work through the system
         assert response.status_code in (200, 400, 502, 503, 504)
     
-    def test_base64_decode_special_chars(self):
+    def test_base64_decode_special_chars(self, monkeypatch):
         """Base64 with spaces and special chars that fail decode."""
+        # Clear both keys so the endpoint stops at key resolution instead of
+        # attempting a real Gemini call (load_dotenv() may load GEMINI_API_KEY).
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
         client = TestClient(app)
         
         # Use characters that are definitely not Base64
@@ -78,11 +88,13 @@ class TestAPIKeyValidation:
     """Test missing GOOGLE_API_KEY → 503 error."""
 
     def test_missing_api_key(self, monkeypatch):
-        """Missing GOOGLE_API_KEY should return 503."""
+        """Missing both GOOGLE_API_KEY and GEMINI_API_KEY should return 503."""
         from sketchos_backend.generation_routes import router
         
-        # Remove API key from environment
+        # Remove BOTH API keys from environment (the GEMINI fallback must not
+        # silently satisfy the 503 path).
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         
         client = TestClient(app)
         response = client.post(
@@ -95,8 +107,47 @@ class TestAPIKeyValidation:
         assert "detail" in response_data
         detail = response_data["detail"]
         assert "error" in detail
-        assert ("Provider unavailable" in detail["error"] or 
-                "GOOGLE_API_KEY" in detail.get("detail", ""))
+        assert "Provider unavailable" in detail["error"]
+
+
+class TestAPIKeyResolution:
+    """Test header → GOOGLE_API_KEY → GEMINI_API_KEY → 503 precedence order."""
+
+    def test_header_key_takes_precedence(self, monkeypatch):
+        """X-Gemini-Api-Key header wins over every env var."""
+        from sketchos_backend.generation_routes import _get_api_key
+        monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
+        monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+        assert _get_api_key(header_key="header-key") == "header-key"
+
+    def test_google_env_precedes_gemini_env(self, monkeypatch):
+        """GOOGLE_API_KEY wins when both env vars are set."""
+        from sketchos_backend.generation_routes import _get_api_key
+        monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
+        monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+        assert _get_api_key() == "google-key"
+
+    def test_gemini_env_fallback(self, monkeypatch):
+        """GEMINI_API_KEY is used when GOOGLE_API_KEY is absent."""
+        from sketchos_backend.generation_routes import _get_api_key
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+        assert _get_api_key() == "gemini-key"
+
+    def test_missing_key_raises_503(self, monkeypatch):
+        """No header and no env key raises ProviderUnavailableError (503)."""
+        from sketchos_backend.generation_routes import (
+            _get_api_key,
+            ProviderUnavailableError,
+        )
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+        with pytest.raises(ProviderUnavailableError):
+            _get_api_key()
 
 
 class TestPass1Morphology:
