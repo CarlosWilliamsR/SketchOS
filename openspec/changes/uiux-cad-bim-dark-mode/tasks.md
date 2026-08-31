@@ -45,40 +45,40 @@ Chain strategy: stacked-to-main
 ## Phase 2: Dashboard Tabs + BYOK Modal (PR #2)
 
 ### RED tests
-- [ ] 2.1 Write `ValidatorDashboard.test.jsx`: tab switch changes visible panel, keyboard ArrowRight/ArrowLeft navigates, Home/End jumps to first/last, tab survives data load
-- [ ] 2.2 Write `BYOKModal.test.jsx`: open/close/Escape, save to localStorage, masked display `••••`+last4, empty key blocked, clear removes key, missing-key renders warning
-- [ ] 2.3 Write `api.test.js` extension: `X-Gemini-Api-Key` header present when key in localStorage, absent when no key, proxy rewrite `/api`→`''` intact
+- [x] 2.1 Write `ValidatorDashboard.test.jsx`: tab switch changes visible panel, keyboard ArrowRight/ArrowLeft navigates, Home/End jumps to first/last, tab survives data load
+- [x] 2.2 Write `BYOKModal.test.jsx`: open/close/Escape, save to localStorage, masked display `••••`+last4, empty key blocked, clear removes key, missing-key renders warning
+- [x] 2.3 Write `api.test.js` extension: `X-Gemini-Api-Key` header present when key in localStorage, absent when no key, proxy rewrite `/api`→`''` intact
 
 ### GREEN
-- [ ] 2.4 Add `activeTab` useState to `ValidatorDashboard.jsx` (coexists with `phase` machine): 0=Ingest, 1=Regulations, 2=Diagnostics
-- [ ] 2.5 Refactor `<section>` blocks into 3 tab panels with `role="tabpanel"`, `aria-labelledby`, `hidden`/`display:none` toggle; tab buttons use `role="tab"`, `aria-selected`
-- [ ] 2.6 Wire SVG icons: UploadIcon+I SketchIcon on Tab 1, RulesIcon on Tab 2, DiagnosticsIcon+WarningIcon+PassIcon on Tab 3 alongside Violations/Status
-- [ ] 2.7 Apply dark-theme CSS classes: `--bg-secondary` panel, `--border` separators, `--accent` active tab, `--text-secondary` body; remove all `#f5f5f5`/`#202124` references
-- [ ] 2.8 Write tab keyboard handler: ArrowLeft/Right, Home/End with `e.preventDefault()` + `stopPropagation` in useEffect
-- [ ] 2.9 Create `frontend/src/components/BYOKModal.jsx`: portal (`createPortal`), `useState` for `isOpen`+`keyValue`, useEffect read localStorage, password input, masked display, Save/Clear/Rotate, inline error for <10 chars, Escape+backdrop close, warning style when no key
-- [ ] 2.10 Add BYOK trigger button (ApiKeyIcon + "API Key") in sidebar header, near title
-- [ ] 2.11 Inject `X-Gemini-Api-Key` in `frontend/src/lib/api.js` `request()`: read `localStorage.getItem('gemini_api_key')`, set header if non-empty; preserve `/api`→`''` proxy
+- [x] 2.4 Add `activeTab` useState to `ValidatorDashboard.jsx` (coexists with `phase` machine): 0=Ingest, 1=Regulations, 2=Diagnostics
+- [x] 2.5 Refactor `<section>` blocks into 3 tab panels with `role="tabpanel"`, `aria-labelledby`, `hidden`/`display:none` toggle; tab buttons use `role="tab"`, `aria-selected`
+- [x] 2.6 Wire SVG icons: UploadIcon+I SketchIcon on Tab 1, RulesIcon on Tab 2, DiagnosticsIcon+WarningIcon+PassIcon on Tab 3 alongside Violations/Status
+- [x] 2.7 Apply dark-theme CSS classes: `--bg-secondary` panel, `--border` separators, `--accent` active tab, `--text-secondary` body; remove all `#f5f5f5`/`#202124` references
+- [x] 2.8 Write tab keyboard handler: ArrowLeft/Right, Home/End with `e.preventDefault()` + `stopPropagation` in useEffect
+- [x] 2.9 Create `frontend/src/components/BYOKModal.jsx`: portal (`createPortal`), `useState` for `isOpen`+`keyValue`, useEffect read localStorage, password input, masked display, Save/Clear/Rotate, inline error for <10 chars, Escape+backdrop close, warning style when no key
+- [x] 2.10 Add BYOK trigger button (ApiKeyIcon + "API Key") in sidebar header, near title
+- [x] 2.11 Inject `X-Gemini-Api-Key` in `frontend/src/lib/api.js` `request()`: read `localStorage.getItem('gemini_api_key')`, set header if non-empty; preserve `/api`→`''` proxy
 
 ### REFACTOR
-- [ ] 2.12 Verify existing `obj.test.js` + `api.test.js` still pass (15 tests); confirm phase state machine not broken by `activeTab`
+- [x] 2.12 Verify existing `obj.test.js` + `api.test.js` still pass (15 tests); confirm phase state machine not broken by `activeTab`
 
 ## Phase 3: Viewport + Clip Planes + HUD (PR #3)
 
 ### RED tests
-- [ ] 3.1 Write `SceneStatsContext.test.jsx`: default `{triangles:0,objects:0,aabbMs:0}`, setStats updates, consumer sees "—" when stats unchanged
-- [ ] 3.2 Write `GeometryScene.test.jsx` (Canvas mocked): camera preset positions correct, clippingPlanes array contains both planes when Z+Y active, HUD renders "—" on empty, `pointerEvents` isolation present
-- [ ] 3.3 Write pure-function tests for clippingPlanes array logic (Z+Y combo) and camera target positions
+- [x] 3.1 Write `SceneStatsContext.test.jsx`: default `{triangles:0,objects:0,aabbMs:0}`, setStats updates, consumer sees "—" when stats unchanged
+- [x] 3.2 Write `GeometryScene.test.jsx` (Canvas mocked): camera preset positions correct, clippingPlanes array contains both planes when Z+Y active, HUD renders "—" on empty, `pointerEvents` isolation present
+- [x] 3.3 Write pure-function tests for clippingPlanes array logic (Z+Y combo) and camera target positions
 
 ### GREEN
-- [ ] 3.4 Create `frontend/src/contexts/SceneStatsContext.jsx`: context with `{triangles,objects,aabbMs}`, `SceneStatsProvider`, `useSceneStats` hook, `setStats` export; default state `{triangles:0,objects:0,aabbMs:0}`; HUD renders "—" when no `setStats` called
-- [ ] 3.5 Integrate `SceneStatsProvider` into `GeometryScene.jsx` Canvas; call `setStats` via useEffect after `parseObj`+AABB compute, using `useMemo` for stats derivation
-- [ ] 3.6 Replace `MESH_COLOR='#cfd3d7'` with PBR matte `#94a3b8`, roughness 0.85, metalness 0.0; add `EdgesGeometry` wireframe overlay (`#60a5fa`, `renderOrder:1`) per mesh via `useMemo`
-- [ ] 3.7 Add camera preset system: 4 buttons (TopDown→`[0,maxY,0]`, Front→`[0,0,maxZ]`, Side→`[maxX,0,0]`, Iso→`[maxX,maxY,maxZ]`), `useFrame` lerp factor 0.08, active preset highlight
-- [ ] 3.8 Add clipping plane system: `useState(clipZ)`+`useState(clipY)`, independent boolean toggles, `renderer.clippingPlanes = (clipZ?[zPlane]:[]).concat(clipY?[yPlane]:[])`, `localClippingEnabled=true` on renderer, slider inputs for plane constant
-- [ ] 3.9 Add HUD overlay: Drei `<Html>` wrapper with `pointerEvents:'none'`, 3 metrics (Triangles/Objects/AABB ms) in `<code>` with `--font-mono`+`tabular-nums`, `aria-live="polite"`, "—" fallback
-- [ ] 3.10 Add status bar (bottom 28px): `--bg-secondary` strip, fixed position, displays HUD metrics
-- [ ] 3.11 Set HUD interactive children `pointerEvents:'auto'` (preset buttons, clip toggles, sliders)
+- [x] 3.4 Create `frontend/src/contexts/SceneStatsContext.jsx`: context with `{triangles,objects,aabbMs}`, `SceneStatsProvider`, `useSceneStats` hook, `setStats` export; default state `{triangles:0,objects:0,aabbMs:0}`; HUD renders "—" when no `setStats` called
+- [x] 3.5 Integrate `SceneStatsProvider` into `GeometryScene.jsx` Canvas; call `setStats` via useEffect after `parseObj`+AABB compute, using `useMemo` for stats derivation
+- [x] 3.6 Replace `MESH_COLOR='#cfd3d7'` with PBR matte `#94a3b8`, roughness 0.85, metalness 0.0; add `EdgesGeometry` wireframe overlay (`#60a5fa`, `renderOrder:1`) per mesh via `useMemo`
+- [x] 3.7 Add camera preset system: 4 buttons (TopDown→`[0,maxY,0]`, Front→`[0,0,maxZ]`, Side→`[maxX,0,0]`, Iso→`[maxX,maxY,maxZ]`), `useFrame` lerp factor 0.08, active preset highlight
+- [x] 3.8 Add clipping plane system: `useState(clipZ)`+`useState(clipY)`, independent boolean toggles, `renderer.clippingPlanes = (clipZ?[zPlane]:[]).concat(clipY?[yPlane]:[])`, `localClippingEnabled=true` on renderer, slider inputs for plane constant
+- [x] 3.9 Add HUD overlay: Drei `<Html>` wrapper with `pointerEvents:'none'`, 3 metrics (Triangles/Objects/AABB ms) in `<code>` with `--font-mono`+`tabular-nums`, `aria-live="polite"`, "—" fallback
+- [x] 3.10 Add status bar (bottom 28px): `--bg-secondary` strip, fixed position, displays HUD metrics
+- [x] 3.11 Set HUD interactive children `pointerEvents:'auto'` (preset buttons, clip toggles, sliders)
 
 ### REFACTOR
-- [ ] 3.12 Verify 1.10 + 2.12 tests still pass; verify clipping planes Z+Y simultaneously; verify camera preset lerp smooth at 60fps
-- [ ] 3.13 Final CSS visual audit: all selectors reference dark tokens only; remove `#3a3d41`/`#cfd3d7`/`#d7dade` remnants; confirm `--viewport-bg: #0b0f19` across all states
+- [x] 3.12 Verify 1.10 + 2.12 tests still pass; verify clipping planes Z+Y simultaneously; verify camera preset lerp smooth at 60fps
+- [x] 3.13 Final CSS visual audit: all selectors reference dark tokens only; remove `#3a3d41`/`#cfd3d7`/`#d7dade` remnants; confirm `--viewport-bg: #0b0f19` across all states

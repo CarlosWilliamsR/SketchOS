@@ -435,3 +435,93 @@ body {
   border-radius: 4px;
   color: var(--text-muted);
 }
+
+/* ---- Viewport HUD overlay (camera presets + clip controls + status bar) ---- */
+.viewport-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--font-sans);
+}
+
+.camera-presets {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.preset-button {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(17, 24, 39, 0.65);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.preset-button:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.preset-button.active {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.25);
+  color: var(--accent);
+}
+
+.clip-controls {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.clip-toggle,
+.clip-slider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(17, 24, 39, 0.65);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.hud-status-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 0 var(--space-md);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.hud-status-bar code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.hud-separator {
+  color: var(--text-muted);
+}
