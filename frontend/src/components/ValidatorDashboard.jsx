@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import GeometryScene from './GeometryScene.jsx';
-import { fetchRules, validateGeometry, autocorrect } from '../lib/api.js';
+import { fetchRules, validateGeometry, autocorrect, generateFromText } from '../lib/api.js';
 import { BYOKModal } from './BYOKModal.jsx';
 import { UploadIcon } from './icons/UploadIcon.jsx';
 import { SketchIcon } from './icons/SketchIcon.jsx';
@@ -45,6 +45,10 @@ export default function ValidatorDashboard() {
   const [error, setError] = useState(null);
   const [dsl, setDsl] = useState('');
   const [activeTab, setActiveTab] = useState(0);
+  const [textPrompt, setTextPrompt] = useState('');
+  const [textResult, setTextResult] = useState(null);
+  const [textError, setTextError] = useState(null);
+  const [textLoading, setTextLoading] = useState(false);
   const tabRefs = useRef([]);
 
   useEffect(() => {
@@ -101,6 +105,26 @@ export default function ValidatorDashboard() {
     } catch (err) {
       setError(err.message);
       setPhase(PHASES.error);
+    }
+  }
+
+  async function handleGenerateFromText() {
+    const prompt = textPrompt.trim();
+    if (!prompt) {
+      setTextError('Enter a prompt describing the architecture you want to generate.');
+      setTextResult(null);
+      return;
+    }
+    setTextError(null);
+    setTextResult(null);
+    setTextLoading(true);
+    try {
+      const data = await generateFromText(prompt);
+      setTextResult(JSON.stringify(data.architecture, null, 2));
+    } catch (err) {
+      setTextError(err.message);
+    } finally {
+      setTextLoading(false);
     }
   }
 
@@ -208,6 +232,33 @@ export default function ValidatorDashboard() {
           <div className="sketch-upload">
             <SketchIcon size={24} />
             <p className="hint">Drop a 2D sketch here to generate walls.</p>
+          </div>
+
+          <div className="text-generation">
+            <label htmlFor="text-prompt">Architecture prompt</label>
+            <input
+              id="text-prompt"
+              className="text-prompt"
+              type="text"
+              value={textPrompt}
+              onChange={(event) => setTextPrompt(event.target.value)}
+              placeholder="Describe the building you want to generate…"
+            />
+            <button
+              className="button"
+              type="button"
+              onClick={handleGenerateFromText}
+              disabled={textLoading}
+            >
+              {textLoading ? 'Generating…' : 'Generate'}
+            </button>
+
+            {textError && (
+              <p className="inline-error" role="alert">{textError}</p>
+            )}
+            {textResult && (
+              <pre className="dsl-result" data-testid="dsl-result">{textResult}</pre>
+            )}
           </div>
         </section>
 

@@ -26,10 +26,16 @@ vi.mock('../lib/api.js', () => ({
   }),
   validateGeometry: vi.fn(),
   autocorrect: vi.fn(),
+  generateFromText: vi.fn(),
 }));
+
+import { generateFromText } from '../lib/api.js';
 
 beforeEach(() => {
   localStorage.clear();
+  // The api.js module mock persists across tests; clear call history so the
+  // blank-prompt test can assert `generateFromText` was never invoked.
+  vi.clearAllMocks();
 });
 
 afterEach(() => {
@@ -284,5 +290,86 @@ describe('ARIA compliance', () => {
       const selectedTabs = tabs.filter((t) => t.getAttribute('aria-selected') === 'true');
       expect(selectedTabs).toHaveLength(1);
     });
+  });
+});
+
+describe('text prompt generation', () => {
+  it('renders a prompt input, Generate button, and keeps the .obj upload control', async () => {
+    render(React.createElement(ValidatorDashboard));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Architecture prompt')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /generate/i })).toBeInTheDocument();
+      expect(screen.getByText(/upload .obj/i)).toBeInTheDocument();
+    });
+  });
+
+  it('posts the prompt to generateFromText and displays the returned architecture JSON', async () => {
+    generateFromText.mockResolvedValue({
+      architecture: { walls: [{ id: 'wall_1', height: 3.0 }], floors: [] },
+    });
+    const user = userEvent.setup();
+    render(React.createElement(ValidatorDashboard));
+
+    const input = await screen.findByLabelText('Architecture prompt');
+    await user.type(input, 'make me a building');
+    await user.click(screen.getByRole('button', { name: /generate/i }));
+
+    await waitFor(() => {
+      expect(generateFromText).toHaveBeenCalledWith('make me a building');
+    });
+
+    const result = screen.getByTestId('dsl-result');
+    expect(result).toHaveTextContent('wall_1');
+    expect(result).toHaveTextContent('"height": 3');
+  });
+
+  it('shows a loading state while generation is pending', async () => {
+    let resolveGenerate;
+    generateFromText.mockImplementation(
+      () => new Promise((resolve) => { resolveGenerate = resolve; }),
+    );
+
+    render(React.createElement(ValidatorDashboard));
+    const input = await screen.findByLabelText('Architecture prompt');
+    fireEvent.change(input, { target: { value: 'make me a building' } });
+    fireEvent.click(screen.getByRole('button', { name: /generate/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /generating/i })).toBeDisabled();
+    });
+
+    resolveGenerate({ architecture: { walls: [] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dsl-result')).toBeInTheDocument();
+    });
+  });
+
+  it('surfaces a generation error as an inline alert', async () => {
+    generateFromText.mockRejectedValue(new Error('Provider unavailable'));
+    const user = userEvent.setup();
+    render(React.createElement(ValidatorDashboard));
+
+    const input = await screen.findByLabelText('Architecture prompt');
+    await user.type(input, 'make me a building');
+    await user.click(screen.getByRole('button', { name: /generate/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Provider unavailable');
+    });
+  });
+
+  it('does not call the API for a blank prompt and shows guidance', async () => {
+    generateFromText.mockResolvedValue({ architecture: { walls: [] } });
+    const user = userEvent.setup();
+    render(React.createElement(ValidatorDashboard));
+
+    await user.click(screen.getByRole('button', { name: /generate/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+    expect(generateFromText).not.toHaveBeenCalled();
   });
 });

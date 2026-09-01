@@ -66,6 +66,19 @@ export function validateGeometry(file) {
 }
 
 /**
+ * Generate a schema-valid ArchitecturalDSL from a natural-language prompt.
+ * @param {string} prompt The architect's natural-language description.
+ * @returns {Promise<{architecture: object}>}
+ */
+export function generateFromText(prompt) {
+  return request('/generate-from-text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt }),
+  });
+}
+
+/**
  * Re-codegen corrected geometry from a full DSL payload and re-validate it.
  * @param {object} dsl Full ArchitecturalDSL payload (JSON-serializable).
  * @returns {Promise<{status: string, report: object, fixes: object[]}>}

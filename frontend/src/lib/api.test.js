@@ -6,7 +6,7 @@
 // boundary.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchRules, validateGeometry, autocorrect, ApiError } from './api.js';
+import { fetchRules, validateGeometry, autocorrect, generateFromText, ApiError } from './api.js';
 
 let fetchMock;
 
@@ -78,6 +78,35 @@ describe('autocorrect', () => {
     expect(JSON.parse(options.body)).toEqual(dsl);
 
     expect(result).toEqual({ status: 'violations', report: {}, fixes: [{ wall_id: 'w1' }] });
+  });
+});
+
+describe('generateFromText', () => {
+  it('POSTs a JSON {prompt} body with Content-Type application/json to /api/generate-from-text', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ architecture: { walls: [{ id: 'wall_1', height: 3.0 }], floors: [] } }),
+    );
+
+    const result = await generateFromText('make me a building');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/generate-from-text');
+    expect(options.method).toBe('POST');
+    expect(options.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(options.body)).toEqual({ prompt: 'make me a building' });
+
+    expect(result).toEqual({ architecture: { walls: [{ id: 'wall_1', height: 3.0 }], floors: [] } });
+  });
+
+  it('embeds the exact prompt string in the body (no hardcoding)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ architecture: { walls: [], floors: [] } }));
+
+    await generateFromText('espesor 20cm');
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/generate-from-text');
+    expect(JSON.parse(options.body)).toEqual({ prompt: 'espesor 20cm' });
   });
 });
 
