@@ -19,8 +19,8 @@ import os
 import tempfile
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import ValidationError
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from sketchos_backend.arch_dsl import ArchitectureModel
 from sketchos_backend.blender_client import BlenderMCPClient
@@ -35,6 +35,35 @@ router = APIRouter()
 
 #: Temp dir prefix shared with the client for autocorrect export staging.
 _TEMP_DIR_PREFIX = "sketchos-validator-"
+
+#: The four per-request threshold keys (wire shape shared by both endpoints).
+_THRESHOLD_KEYS = ("min_height", "max_height", "min_thickness", "max_thickness")
+
+
+class Thresholds(BaseModel):
+    """Optional per-request validator thresholds.
+
+    Each bound is optional (``None`` = absent) and, when present, must be finite
+    and non-negative; ``0`` means "unenforced". ``extra="forbid"`` rejects
+    unknown keys; the after-validator enforces ``min ≤ max`` per paired bound.
+    A ``0`` bound is "unenforced" (not a real bound), so it is never compared —
+    ``min=3`` with ``max=0`` is valid ("no upper limit").
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    min_height: float | None = Field(None, ge=0, allow_inf_nan=False)
+    max_height: float | None = Field(None, ge=0, allow_inf_nan=False)
+    min_thickness: float | None = Field(None, ge=0, allow_inf_nan=False)
+    max_thickness: float | None = Field(None, ge=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _bounds(self) -> "Thresholds":
+        if self.min_height and self.max_height and self.min_height > self.max_height:
+            raise ValueError("min_height must be ≤ max_height")
+        if self.min_thickness and self.max_thickness and self.min_thickness > self.max_thickness:
+            raise ValueError("min_thickness must be ≤ max_thickness")
+        return self
 
 
 def _make_client() -> ValidatorClient:
@@ -91,6 +120,30 @@ def correct_model(model: ArchitectureModel, violations: list[dict[str, Any]]) ->
     return fixes
 
 
+async def _resolve_thresholds(
+    client: ValidatorClient,
+    raw: dict[str, Any] | None,
+) -> dict[str, float]:
+    """Resolve the effective thresholds for a request.
+
+    When no threshold is supplied (``raw`` is empty/``None``), fall back to the
+    validator's ``-print-defaults`` rules. Otherwise validate the supplied set
+    through :class:`Thresholds` (raising :class:`ValidationError` on negative,
+    non-finite, or min > max bounds) and merge it over the defaults so every
+    bound is present for ``client.validate``. Invalid thresholds raise BEFORE
+    any Go invocation (``extract_rules``/``validate``).
+    """
+    if not raw:
+        return await client.extract_rules()
+    model = Thresholds.model_validate(raw)
+    resolved = dict(await client.extract_rules())
+    for key in _THRESHOLD_KEYS:
+        value = getattr(model, key)
+        if value is not None:
+            resolved[key] = value
+    return resolved
+
+
 async def _validate_model(
     model: ArchitectureModel,
     thresholds: dict[str, float],
@@ -123,13 +176,32 @@ async def extract_rules(
 @router.post("/validate-geometry")
 async def validate_geometry(
     file: UploadFile = File(...),
+    min_height: float | None = Form(None),
+    max_height: float | None = Form(None),
+    min_thickness: float | None = Form(None),
+    max_thickness: float | None = Form(None),
     client: ValidatorClient = Depends(get_validator_client),
 ) -> dict[str, Any]:
-    """Validate uploaded ``.obj`` bytes and return the Go JSON report + status."""
+    """Validate uploaded ``.obj`` bytes against optional per-request thresholds.
+
+    Thresholds are supplied as four optional multipart form fields; when all
+    are omitted, the validator's ``-print-defaults`` rules are used. Invalid
+    thresholds (negative, non-finite, min > max) are rejected with 422 before
+    the Go binary is invoked.
+    """
     obj_bytes = await file.read()
+    raw = {
+        "min_height": min_height,
+        "max_height": max_height,
+        "min_thickness": min_thickness,
+        "max_thickness": max_thickness,
+    }
+    raw = {key: value for key, value in raw.items() if value is not None}
     try:
-        thresholds = await client.extract_rules()
+        thresholds = await _resolve_thresholds(client, raw)
         result = await client.validate(obj_bytes, thresholds)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid thresholds: {exc}") from exc
     except ValidatorSpawnError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValidatorTimeoutError as exc:
@@ -149,22 +221,26 @@ async def autocorrect(
 ) -> dict[str, Any]:
     """Re-codegen corrected geometry and re-validate it (single-pass correction).
 
-    The DSL payload is validated, built through Blender, exported, and validated
-    by Go. On violations the dimensions are corrected to their exact thresholds
-    and the model is re-codegen'd and re-validated once.
+    The optional ``thresholds`` key is popped BEFORE ``ArchitectureModel``
+    validation (``extra="forbid"`` would otherwise reject it); the SAME resolved
+    thresholds apply to both re-validate passes. Absent thresholds fall back to
+    ``extract_rules()``.
     """
+    thresholds_raw = payload.pop("thresholds", None)
     try:
         model = ArchitectureModel.model_validate(payload)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=f"Invalid DSL: {exc}") from exc
 
     try:
-        thresholds = await client.extract_rules()
+        thresholds = await _resolve_thresholds(client, thresholds_raw)
         result = await _validate_model(model, thresholds, client)
         fixes: list[dict[str, Any]] = []
         if result.status == "violations":
             fixes = correct_model(model, result.report["violations"])
             result = await _validate_model(model, thresholds, client)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid thresholds: {exc}") from exc
     except ValidatorSpawnError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValidatorTimeoutError as exc:

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from sketchos_backend import validator_routes
 from sketchos_backend.main import app
@@ -24,6 +25,7 @@ from sketchos_backend.validator_client import (
     ValidatorSpawnError,
     ValidatorTimeoutError,
 )
+from sketchos_backend.validator_routes import Thresholds
 
 
 DEFAULT_THRESHOLDS = {
@@ -31,6 +33,14 @@ DEFAULT_THRESHOLDS = {
     "max_height": 0,
     "min_thickness": 0.1,
     "max_thickness": 0,
+}
+
+#: A fully-specified custom threshold set (all four bounds supplied).
+CUSTOM_THRESHOLDS = {
+    "min_height": 2.5,
+    "max_height": 4.0,
+    "min_thickness": 0.15,
+    "max_thickness": 0.5,
 }
 
 PASS_REPORT = {"aabb": {}, "objects": [], "violations": []}
@@ -159,6 +169,64 @@ def test_extract_rules_returns_thresholds(client):
 
 
 # --------------------------------------------------------------------------- #
+# Thresholds model (Phase 1: shared pydantic model)
+# --------------------------------------------------------------------------- #
+
+
+def test_thresholds_all_none_is_valid():
+    t = Thresholds.model_validate({})
+    assert t.min_height is None
+    assert t.max_height is None
+    assert t.min_thickness is None
+    assert t.max_thickness is None
+
+
+def test_thresholds_valid_bounds_pass():
+    t = Thresholds.model_validate(
+        {
+            "min_height": 2.0,
+            "max_height": 3.0,
+            "min_thickness": 0.1,
+            "max_thickness": 0.3,
+        }
+    )
+    assert t.min_height == 2.0
+    assert t.max_height == 3.0
+    assert t.min_thickness == 0.1
+    assert t.max_thickness == 0.3
+
+
+def test_thresholds_min_height_gt_max_rejected():
+    with pytest.raises(ValidationError):
+        Thresholds.model_validate({"min_height": 3.0, "max_height": 2.0})
+
+
+def test_thresholds_min_thickness_gt_max_rejected():
+    with pytest.raises(ValidationError):
+        Thresholds.model_validate({"min_thickness": 0.5, "max_thickness": 0.2})
+
+
+def test_thresholds_negative_rejected():
+    with pytest.raises(ValidationError):
+        Thresholds.model_validate({"min_height": -1.0})
+
+
+def test_thresholds_nan_rejected():
+    with pytest.raises(ValidationError):
+        Thresholds.model_validate({"min_height": float("nan")})
+
+
+def test_thresholds_inf_rejected():
+    with pytest.raises(ValidationError):
+        Thresholds.model_validate({"min_height": float("inf")})
+
+
+def test_thresholds_unknown_key_forbidden():
+    with pytest.raises(ValidationError):
+        Thresholds.model_validate({"bogus": 1.0})
+
+
+# --------------------------------------------------------------------------- #
 # POST /validate-geometry
 # --------------------------------------------------------------------------- #
 
@@ -245,6 +313,131 @@ def test_validate_geometry_timeout_504(client):
 
 
 # --------------------------------------------------------------------------- #
+# POST /validate-geometry — optional thresholds (Phase 2)
+# --------------------------------------------------------------------------- #
+
+
+def test_validate_geometry_forwards_custom_thresholds(client):
+    fake = FakeValidatorClient(validate_results=[])
+    use_fake(fake)
+
+    resp = client.post(
+        "/validate-geometry",
+        files={"file": ("m.obj", b"v 0 0 0\n", "text/plain")},
+        data={k: str(v) for k, v in CUSTOM_THRESHOLDS.items()},
+    )
+
+    assert resp.status_code == 200
+    assert fake.validate_thresholds == [CUSTOM_THRESHOLDS]
+
+
+def test_validate_geometry_absent_thresholds_falls_back_to_extract_rules(client):
+    fake = FakeValidatorClient(rules=DEFAULT_THRESHOLDS)
+    use_fake(fake)
+
+    resp = client.post(
+        "/validate-geometry",
+        files={"file": ("m.obj", b"v 0 0 0\n", "text/plain")},
+    )
+
+    assert resp.status_code == 200
+    assert fake.extract_calls == 1
+    assert fake.validate_thresholds == [DEFAULT_THRESHOLDS]
+
+
+def test_validate_geometry_partial_thresholds_merge_defaults(client):
+    fake = FakeValidatorClient(rules=DEFAULT_THRESHOLDS)
+    use_fake(fake)
+
+    resp = client.post(
+        "/validate-geometry",
+        files={"file": ("m.obj", b"v 0 0 0\n", "text/plain")},
+        data={"min_height": "2.5"},
+    )
+
+    assert resp.status_code == 200
+    assert fake.validate_thresholds[0]["min_height"] == 2.5
+    # Missing bounds inherit the extract_rules defaults.
+    assert fake.validate_thresholds[0]["max_height"] == DEFAULT_THRESHOLDS["max_height"]
+    assert (
+        fake.validate_thresholds[0]["min_thickness"]
+        == DEFAULT_THRESHOLDS["min_thickness"]
+    )
+
+
+def test_validate_geometry_min_gt_max_422(client):
+    fake = FakeValidatorClient()
+    use_fake(fake)
+
+    resp = client.post(
+        "/validate-geometry",
+        files={"file": ("m.obj", b"v 0 0 0\n", "text/plain")},
+        data={"min_height": "3.0", "max_height": "2.0"},
+    )
+
+    assert resp.status_code == 422
+    assert fake.validate_calls == 0
+
+
+def test_validate_geometry_negative_threshold_422(client):
+    fake = FakeValidatorClient()
+    use_fake(fake)
+
+    resp = client.post(
+        "/validate-geometry",
+        files={"file": ("m.obj", b"v 0 0 0\n", "text/plain")},
+        data={"min_height": "-1.0"},
+    )
+
+    assert resp.status_code == 422
+    assert fake.validate_calls == 0
+
+
+def test_validate_geometry_nonfinite_threshold_422(client):
+    fake = FakeValidatorClient()
+    use_fake(fake)
+
+    resp = client.post(
+        "/validate-geometry",
+        files={"file": ("m.obj", b"v 0 0 0\n", "text/plain")},
+        data={"min_height": "nan"},
+    )
+
+    assert resp.status_code == 422
+    assert fake.validate_calls == 0
+
+
+def test_validate_geometry_rejects_shell_injection_threshold(client):
+    fake = FakeValidatorClient()
+    use_fake(fake)
+
+    resp = client.post(
+        "/validate-geometry",
+        files={"file": ("m.obj", b"v 0 0 0\n", "text/plain")},
+        data={"min_height": "2; rm -rf /"},
+    )
+
+    assert resp.status_code == 422
+    assert fake.validate_calls == 0
+    assert fake.extract_calls == 0
+
+
+def test_validate_geometry_thresholds_coerced_to_numeric(client):
+    fake = FakeValidatorClient()
+    use_fake(fake)
+
+    resp = client.post(
+        "/validate-geometry",
+        files={"file": ("m.obj", b"v 0 0 0\n", "text/plain")},
+        data={"min_height": "2.5", "max_height": "4.0"},
+    )
+
+    assert resp.status_code == 200
+    assert isinstance(fake.validate_thresholds[0]["min_height"], float)
+    assert isinstance(fake.validate_thresholds[0]["max_height"], float)
+
+
+# --------------------------------------------------------------------------- #
 # POST /autocorrect
 # --------------------------------------------------------------------------- #
 
@@ -272,3 +465,114 @@ def test_autocorrect_revalidates_clean(client, monkeypatch):
     # One thresholds lookup + two validations (violations then clean re-validate).
     assert fake.extract_calls == 1
     assert fake.validate_calls == 2
+
+
+# --------------------------------------------------------------------------- #
+# POST /autocorrect — optional thresholds key (Phase 2)
+# --------------------------------------------------------------------------- #
+
+
+def test_autocorrect_thresholds_popped_and_reused_on_both_passes(client, monkeypatch):
+    monkeypatch.setattr(validator_routes, "build_architecture", fake_build_architecture)
+    violations = ValidationResult(
+        status="violations", report=dict(VIOLATION_REPORT), returncode=1, stderr=""
+    )
+    clean = ValidationResult(
+        status="pass", report=dict(PASS_REPORT), returncode=0, stderr=""
+    )
+    fake = FakeValidatorClient(validate_results=[violations, clean])
+    use_fake(fake)
+
+    payload = make_dsl_payload()
+    payload["thresholds"] = CUSTOM_THRESHOLDS
+
+    resp = client.post("/autocorrect", json=payload)
+
+    assert resp.status_code == 200
+    assert fake.validate_calls == 2
+    # The SAME custom thresholds apply to both re-validate passes.
+    assert fake.validate_thresholds == [CUSTOM_THRESHOLDS, CUSTOM_THRESHOLDS]
+
+
+def test_autocorrect_absent_thresholds_falls_back(client, monkeypatch):
+    monkeypatch.setattr(validator_routes, "build_architecture", fake_build_architecture)
+    clean = ValidationResult(
+        status="pass", report=dict(PASS_REPORT), returncode=0, stderr=""
+    )
+    fake = FakeValidatorClient(rules=DEFAULT_THRESHOLDS, validate_results=[clean])
+    use_fake(fake)
+
+    resp = client.post("/autocorrect", json=make_dsl_payload())
+
+    assert resp.status_code == 200
+    assert fake.validate_thresholds == [DEFAULT_THRESHOLDS]
+
+
+def test_autocorrect_partial_thresholds_merge_defaults(client, monkeypatch):
+    monkeypatch.setattr(validator_routes, "build_architecture", fake_build_architecture)
+    clean = ValidationResult(
+        status="pass", report=dict(PASS_REPORT), returncode=0, stderr=""
+    )
+    fake = FakeValidatorClient(rules=DEFAULT_THRESHOLDS, validate_results=[clean])
+    use_fake(fake)
+
+    payload = make_dsl_payload()
+    payload["thresholds"] = {"min_height": 2.5}
+
+    resp = client.post("/autocorrect", json=payload)
+
+    assert resp.status_code == 200
+    assert fake.validate_thresholds[0]["min_height"] == 2.5
+    assert fake.validate_thresholds[0]["max_height"] == DEFAULT_THRESHOLDS["max_height"]
+
+
+def test_autocorrect_invalid_thresholds_422(client, monkeypatch):
+    monkeypatch.setattr(validator_routes, "build_architecture", fake_build_architecture)
+    fake = FakeValidatorClient()
+    use_fake(fake)
+
+    payload = make_dsl_payload()
+    payload["thresholds"] = {"min_height": 3.0, "max_height": 2.0}
+
+    resp = client.post("/autocorrect", json=payload)
+
+    assert resp.status_code == 422
+    assert "Invalid thresholds" in resp.json()["detail"]
+    assert fake.validate_calls == 0
+
+
+def test_autocorrect_unknown_threshold_key_422(client, monkeypatch):
+    monkeypatch.setattr(validator_routes, "build_architecture", fake_build_architecture)
+    fake = FakeValidatorClient()
+    use_fake(fake)
+
+    payload = make_dsl_payload()
+    payload["thresholds"] = {"bogus": 1.0}
+
+    resp = client.post("/autocorrect", json=payload)
+
+    assert resp.status_code == 422
+    assert "Invalid thresholds" in resp.json()["detail"]
+    assert fake.validate_calls == 0
+
+
+def test_autocorrect_thresholds_key_does_not_leak_into_dsl_validation(
+    client, monkeypatch
+):
+    """A payload with a `thresholds` key must not 422 as a forbidden DSL key."""
+    monkeypatch.setattr(validator_routes, "build_architecture", fake_build_architecture)
+    clean = ValidationResult(
+        status="pass", report=dict(PASS_REPORT), returncode=0, stderr=""
+    )
+    fake = FakeValidatorClient(validate_results=[clean])
+    use_fake(fake)
+
+    payload = make_dsl_payload()
+    payload["thresholds"] = CUSTOM_THRESHOLDS
+
+    resp = client.post("/autocorrect", json=payload)
+
+    # If `thresholds` were not popped before model_validate, extra="forbid"
+    # would reject it with a 422 "Invalid DSL" here.
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pass"
