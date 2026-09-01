@@ -1,77 +1,89 @@
-# Apply Progress: text-to-dsl — PR 2 (Core Endpoint)
+# Apply Progress: text-to-dsl — PR 4 (Prompt-builder hardening)
 
 **Change**: text-to-dsl
 **Mode**: Strict TDD (backend `uv run pytest`)
-**Batch**: PR #2 — Phase 2 (3 tasks)
+**Batch**: PR #4 — Phase 4 hardening (2 tasks)
 **Date**: 2026-08-31
 
 ## Status
 
-Cumulative 8/14 tasks complete (Phase 1 + Phase 2). Backend full suite: **109 passed** (97 pre-PR2 + 12 new). Ready for next batch (Phase 3, frontend).
+Cumulative 16/17 tasks complete (Phases 1–4, except 4.3 manual smoke). Backend full suite: **111 passed** (109 prior + 2 new). This batch closes the verify FAIL on the two LLM-nondeterministic scenarios (REQ-03 S2 "explicit dimensions override defaults", REQ-05 S1 "non-meter units normalized") by making the prompt content deterministically assertable.
 
-## Completed Tasks — PR 2
+## Completed Tasks — PR 4 (hardening)
 
-- [x] 2.1 RED: `backend/tests/test_text_generation.py` — `/generate-from-text` integration tests (200 happy, 400 empty, header key, 503, 422, 502, retry) — mock genai + BlenderMCPClient.
-- [x] 2.2 GREEN: extracted `_render_few_shot_examples()`; added `_build_text_prompt(user_prompt, retry_error)` (defaults directive + few-shot + "user description", NOT "morphological analysis"); optional `build_prompt` on `_pass2_schema_json`/`_validate_and_retry`.
-- [x] 2.3 GREEN: `TextGenerationRequest(prompt)` + `@router.post("/generate-from-text")` → `_get_api_key(header)` → `_validate_and_retry(..., build_prompt=_build_text_prompt)` → `_execute_blender`; error mapping mirrors image path (no 500).
+- [x] 4.4 RED: `backend/tests/test_text_generation.py` — `test_includes_unit_normalization_instruction` (meters canonical + cm/mm/ft/in listed) and `test_explicit_dimensions_override_defaults` (user dims preserved verbatim, defaults subordinate, normalization still applies).
+- [x] 4.5 GREEN: `backend/src/sketchos_backend/defaults.py` — `render_unit_convention_instruction()`; wired into `_build_text_prompt()` (subordinate defaults directive + canonical-unit directive); docstring updated.
 
-## TDD Cycle Evidence — PR 2
+## TDD Cycle Evidence — PR 4
 
 | Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
 |------|-----------|-------|------------|-----|-------|-------------|----------|
-| 2.1 | `tests/test_text_generation.py` | Integration | N/A (new) | ✅ 404 (`/generate-from-text` missing) + `ImportError` (`_build_text_prompt`) | ✅ 8 endpoint tests passed | ✅ happy + empty(400) + header-key + 503 + 502 + 422 + retry-succeeds | ➖ None needed |
-| 2.2 | `tests/test_text_generation.py` | Unit | ✅ 109 full-suite (post-2.1) | ✅ `ImportError: _build_text_prompt` | ✅ 4 builder tests passed | ✅ defaults + excludes-morphology + few-shot + retry-embed (4 cases) | ✅ extracted `_render_few_shot_examples` (dedup) |
-| 2.3 | `tests/test_text_generation.py` | Integration | ✅ 109 full-suite | ✅ 422 (min_length) vs spec 400 → handler whitelisting | ✅ 12/12 endpoint+builder green | ✅ empty + whitespace both 400 | ✅ updated module docstring |
+| 4.4 | `tests/test_text_generation.py` | Unit | ✅ 16/16 (test_text_generation + test_defaults) | ✅ 2 RED tests (assert `meters`/`canonical`/`centimeters`/`feet` fail — instruction absent) | ✅ 2 passed | ✅ 4 assertions × 2 tests (canonical + 3 conversion units; preserve + subordinate + normalize) | ➖ None needed |
+| 4.5 | `defaults.py` + `generation_routes.py` | Unit | ✅ 16/16 | N/A (RED via 4.4) | ✅ `render_unit_convention_instruction` + wiring | ✅ 2 cases (bare + explicit-dims) | ✅ docstring updated |
 
-### Test Summary (PR 2)
+### Test Summary (PR 4)
 
-- **Total tests added**: 12 (8 endpoint + 4 prompt-builder)
-- **Total tests passing**: 109 (97 pre-existing + 12 new)
-- **Layers used**: Unit (4), Integration (8)
-- **Approval tests** (refactoring): None — `_render_few_shot_examples()` is an extract-refactor covered by the existing image-path suite (still green)
-- **Pure functions created**: `_render_few_shot_examples`, `_build_text_prompt`
+- **Total tests added**: 2 (prompt-builder unit)
+- **Total tests passing (backend)**: 111 (109 prior + 2 new)
+- **Layers used**: Unit (2)
+- **Approval tests** (refactoring): None — additive prompt instruction; image-path suite still green
+- **Pure functions created**: `render_unit_convention_instruction`
 
-## Files Changed — PR 2
+## Files Changed — PR 4
 
 | File | Action | What Was Done |
 |------|--------|---------------|
-| `backend/src/sketchos_backend/generation_routes.py` | Modified | `TextGenerationRequest`; `_render_few_shot_examples()`; `_build_text_prompt()`; optional `build_prompt` on `_pass2_schema_json`/`_validate_and_retry`; `POST /generate-from-text` handler; docstring |
-| `backend/tests/test_text_generation.py` | Created | Endpoint + prompt-builder tests (robust parent-package genai mock) |
-| `openspec/changes/text-to-dsl/tasks.md` | Modified | 2.1–2.3 marked `[x]` |
+| `backend/src/sketchos_backend/defaults.py` | Modified | Added `render_unit_convention_instruction()` — canonical meters directive with cm/mm/ft/in conversion factors |
+| `backend/src/sketchos_backend/generation_routes.py` | Modified | Import + wire the canonical-unit directive into `_build_text_prompt()`; docstring |
+| `backend/tests/test_text_generation.py` | Modified | 2 new prompt-builder tests (unit normalization + explicit-dims override) |
+| `openspec/changes/text-to-dsl/tasks.md` | Modified | Phase 3 marked `[x]`; 4.1/4.2 `[x]`; 4.4/4.5 `[x]` |
 
-## Work Unit Evidence — PR 2
+## Work Unit Evidence — PR 4
 
 | Evidence | Value |
 |---|---|
-| Focused test command + result | `uv run pytest tests/test_text_generation.py -q` → 12 passed; full `uv run pytest tests/` → 109 passed |
-| Runtime harness | N/A — endpoint exercised via mocked genai + BlenderMCPClient (TestClient); live needs an API key (matches work-unit-2 forecast) |
-| Rollback boundary | Revert the `POST /generate-from-text` handler + `_build_text_prompt`/`_render_few_shot_examples` + `build_prompt` param + `TextGenerationRequest`; image path (`/generate-geometry`) contract untouched (defaults `build_prompt=_build_pass2_prompt` preserve it) |
+| Focused test command + result | `uv run pytest tests/test_text_generation.py tests/test_defaults.py -q` → 18 passed |
+| Full suite | `uv run pytest tests/ -q` → 111 passed (109 + 2 new), exit code 0 |
+| Runtime harness | N/A — pure prompt-builder functions; no server boundary (live Gemini/Blender needs an API key + blender binary) |
+| Rollback boundary | Revert `render_unit_convention_instruction()` + its import/wiring in `_build_text_prompt` + the 2 tests; image path (`/generate-geometry`) and `/api` proxy contract untouched |
 
-## Deviations from Design — PR 2
+## Deviations from Design — PR 4
 
-1. **Empty-prompt code path**: task 2.3 text said `Field(min_length=1)`, but Pydantic rejects an empty string at request-parse time with 422, not the spec's 400. Dropped `min_length` (so a *missing* `prompt` still yields 422 via FastAPI) and reject empty/whitespace in the handler with 400 `{"error": "Invalid prompt"}`. This satisfies spec requirement "400 empty/whitespace prompt" and "422 missing prompt".
-2. **`_build_text_prompt` retry feedback**: design's interface listed `_build_text_prompt(user_prompt, retry_error)`; implemented `retry_error` threading so the self-healing retry contract is preserved on the text path (Pass 2 retry injects the validation error).
+None — matches the design decision "defaults directive counters example bias"; the canonical-unit directive is the deterministic mechanism the verify phase's SUGGESTION #1 explicitly requested.
 
-## Issues Found — PR 2
+## Issues Found — PR 4
 
-1. **Parent-package mock is the robust approach** (confirms PR #1's note): `_pass2_schema_json` binds `genai` via `import google.generativeai as genai`. The new tests patch `google.generativeai` directly on the parent `google` namespace package (and `sys.modules` as belt-and-suspenders), then `importlib.reload(generation_routes)`. This reliably defeats the real SDK even though `google-generativeai` is a declared dependency.
+None.
+
+## Previously Completed — PR 3 (preserved)
+
+- [x] 3.1 RED: `frontend/src/lib/api.test.js` — `generateFromText` POSTs `/api/generate-from-text` JSON `{prompt}` + Content-Type (2 tests).
+- [x] 3.2 GREEN: `frontend/src/lib/api.js` — `generateFromText(prompt)`.
+- [x] 3.3 RED: `ValidatorDashboard.test.jsx` — input + call + JSON + error + blank guard (5 tests).
+- [x] 3.4 GREEN: `ValidatorDashboard.jsx` — `handleGenerateFromText` + prompt input + Generate + read-only `<pre data-testid="dsl-result">` + inline `role="alert"` error.
+- Frontend full suite: 178 passed (10 files).
+
+## Previously Completed — PR 2 (preserved)
+
+- [x] 2.1 RED: `backend/tests/test_text_generation.py` — `/generate-from-text` integration tests (200/400/header/503/422/502/retry).
+- [x] 2.2 GREEN: `_render_few_shot_examples()`; `_build_text_prompt()`; optional `build_prompt`.
+- [x] 2.3 GREEN: `TextGenerationRequest` + `POST /generate-from-text` handler; error mapping mirrors image path.
 
 ## Previously Completed — PR 1 (preserved)
 
 - [x] 1.1 RED: `backend/tests/test_defaults.py` — DefaultParams fallbacks + render_defaults_directive.
 - [x] 1.2 GREEN: `backend/src/sketchos_backend/defaults.py` — DefaultParams + env overrides + directive.
-- [x] 1.3 RED: extend `test_missing_api_key` (delenv both keys) + `_get_api_key` precedence tests.
-- [x] 1.4 GREEN: header-aware `_get_api_key(header_key=None)`; `load_dotenv()`; `python-dotenv` dep.
-- [x] 1.5 Verified: `load_dotenv()` resolves repo-root `.env` from `backend/` cwd.
+- [x] 1.3 RED: `_get_api_key` precedence tests.
+- [x] 1.4 GREEN: header-aware `_get_api_key`; `load_dotenv()`; `python-dotenv` dep.
+- [x] 1.5 Verified: `load_dotenv()` resolves repo-root `.env`.
 
 ## Remaining Tasks
 
-- [ ] 3.1–3.4 Phase 3: frontend `generateFromText` + Ingest UI (PR 3)
-- [ ] 4.1–4.3 Phase 4: verification
+- [ ] 4.3 Manual smoke — bare "make me a building" → 200 defaults; "espesor 20cm" → 0.2 m (requires live Gemini + Blender; not runnable here).
 
 ## Workload / PR Boundary
 
 - Mode: chained PR slice (stacked-to-main), delivery strategy `auto-chain`
-- Current work unit: 2 (`POST /generate-from-text` + `_build_text_prompt`)
-- Boundary: Phase 2 only — no frontend; image path contract untouched
-- Review budget impact: ~150 authored lines (well under 400)
+- Current work unit: 4 (prompt-builder hardening)
+- Boundary: Phase 4 hardening only — backend prompt builder + tests; no frontend; image path and `/api` proxy contract untouched
+- Review budget impact: 53 insertions / 5 deletions (well under 400)

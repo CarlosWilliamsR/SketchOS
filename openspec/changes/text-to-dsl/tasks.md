@@ -40,13 +40,18 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Frontend Integration (PR 3)
 
-- [ ] 3.1 RED: `frontend/src/lib/api.test.js` — `generateFromText` POSTs `/api/generate-from-text` JSON `{prompt}` + Content-Type.
-- [ ] 3.2 GREEN: `frontend/src/lib/api.js` — add `generateFromText(prompt)`.
-- [ ] 3.3 RED: `ValidatorDashboard.test.jsx` — input renders, Generate calls api + shows JSON DSL, error → error state, `.obj` flow untouched.
-- [ ] 3.4 GREEN: `ValidatorDashboard.jsx` — `textPrompt`/`textResult`/`textError`/`textLoading`, prompt input + Generate + read-only `<pre>` result + inline error in Ingest tab.
+- [x] 3.1 RED: `frontend/src/lib/api.test.js` — `generateFromText` POSTs `/api/generate-from-text` JSON `{prompt}` + Content-Type.
+- [x] 3.2 GREEN: `frontend/src/lib/api.js` — add `generateFromText(prompt)`.
+- [x] 3.3 RED: `ValidatorDashboard.test.jsx` — input renders, Generate calls api + shows JSON DSL, error → error state, `.obj` flow untouched.
+- [x] 3.4 GREEN: `ValidatorDashboard.jsx` — `textPrompt`/`textResult`/`textError`/`textLoading`, prompt input + Generate + read-only `<pre>` result + inline error in Ingest tab.
 
 ## Phase 4: Verification
 
-- [ ] 4.1 `uv run pytest` (backend) — full suite green incl. `/generate-geometry` regression.
-- [ ] 4.2 `npm test` (frontend) — full suite green.
-- [ ] 4.3 Manual smoke — bare "make me a building" → 200 defaults; "espesor 20cm" → 0.2 m.
+- [x] 4.1 `uv run pytest` (backend) — full suite green incl. `/generate-geometry` regression (111 passed after prompt-builder hardening).
+- [x] 4.2 `npm test` (frontend) — full suite green (178 passed; no frontend changes this batch).
+- [ ] 4.3 Manual smoke — bare "make me a building" → 200 defaults; "espesor 20cm" → 0.2 m (requires live Gemini + Blender; not runnable in this environment).
+
+### Prompt-builder hardening (closes verify FAIL — REQ-03 S2 + REQ-05 S1)
+
+- [x] 4.4 RED: `backend/tests/test_text_generation.py` — `test_includes_unit_normalization_instruction` (meters canonical + cm/mm/ft/in) and `test_explicit_dimensions_override_defaults` (user dims preserved verbatim, defaults subordinate).
+- [x] 4.5 GREEN: `backend/src/sketchos_backend/defaults.py` — `render_unit_convention_instruction()`; wired into `_build_text_prompt()` (subordinate defaults directive + canonical-unit directive).

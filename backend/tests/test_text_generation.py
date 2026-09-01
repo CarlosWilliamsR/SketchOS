@@ -288,3 +288,29 @@ class TestBuildTextPrompt:
 
         assert "two parallel walls" in prompt
         assert "wall height must be > 0" in prompt
+
+    def test_includes_unit_normalization_instruction(self, monkeypatch):
+        """The prompt must name meters as the canonical unit and list the
+        non-meter units (cm/mm/ft/in) it converts, making REQ-05 deterministic."""
+        from sketchos_backend.generation_routes import _build_text_prompt
+
+        prompt = _build_text_prompt("make me a building")
+
+        assert "meters" in prompt
+        assert "canonical" in prompt
+        assert "centimeters" in prompt
+        assert "feet" in prompt
+
+    def test_explicit_dimensions_override_defaults(self, monkeypatch):
+        """Explicit dimensions must pass through verbatim while the defaults
+        directive stays subordinate (conditional on the user omitting dims)."""
+        from sketchos_backend.generation_routes import _build_text_prompt
+
+        prompt = _build_text_prompt("espesor 20cm")
+
+        # The user's explicit dimension text is preserved, not replaced.
+        assert "espesor 20cm" in prompt
+        # The defaults are clearly subordinate to any user-specified dimension.
+        assert "If the user's description omits dimensions" in prompt
+        # The canonical-unit instruction still applies so "20cm" normalizes to m.
+        assert "meters" in prompt

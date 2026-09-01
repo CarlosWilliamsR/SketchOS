@@ -75,7 +75,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from sketchos_backend.defaults import render_defaults_directive
+from sketchos_backend.defaults import render_defaults_directive, render_unit_convention_instruction
 
 
 # Configure logging
@@ -406,19 +406,22 @@ def _build_text_prompt(user_prompt: str, retry_error: str | None = None) -> str:
     """Build the natural-language Pass 2 prompt for the text-to-architecture path.
 
     Unlike ``_build_pass2_prompt`` (image path, "morphological analysis" wording),
-    this describes the user's plain-language request and injects the env-overridable
-    defaults directive so a dimension-less prompt still produces a valid model.
+    this describes the user's plain-language request, injects the env-overridable
+    defaults directive (subordinate to any user-specified dimension), and the
+    canonical-unit directive (all dimensions normalized to meters) so a
+    dimension-less prompt still produces a valid model.
 
     Args:
         user_prompt: Raw natural-language description from the client.
         retry_error: Optional Pydantic validation error from a previous attempt.
 
     Returns:
-        Formatted prompt string with defaults, few-shot examples, and the user
-        description.
+        Formatted prompt string with defaults, canonical-unit rule, few-shot
+        examples, and the user description.
     """
     instruction = (
         f"{render_defaults_directive()}\n\n"
+        f"{render_unit_convention_instruction()}\n\n"
         f"{_render_few_shot_examples()}"
         f"Now, based on the user's natural-language description:\n\n"
         f"{user_prompt}\n\n"
