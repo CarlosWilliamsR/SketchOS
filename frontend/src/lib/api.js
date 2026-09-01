@@ -55,13 +55,30 @@ export function fetchRules() {
 }
 
 /**
- * Upload an `.obj` File and validate it.
+ * The four per-request threshold keys (wire shape shared by both endpoints).
+ * Each value is a number; `0` means "unenforced" (no limit).
+ */
+const THRESHOLD_KEYS = ['min_height', 'max_height', 'min_thickness', 'max_thickness'];
+
+/**
+ * Upload an `.obj` File and validate it against optional per-request thresholds.
  * @param {File} file The selected `.obj` file.
+ * @param {{min_height?:number, max_height?:number, min_thickness?:number, max_thickness?:number}} [thresholds]
+ *   Optional thresholds; supplied fields are appended as form fields, omitted
+ *   fields fall back to the backend defaults. `0` is sent as "0" (unenforced).
  * @returns {Promise<{status: string, report: object}>}
  */
-export function validateGeometry(file) {
+export function validateGeometry(file, thresholds) {
   const form = new FormData();
   form.append('file', file, file.name);
+  if (thresholds) {
+    for (const key of THRESHOLD_KEYS) {
+      const value = thresholds[key];
+      if (value !== undefined && value !== null) {
+        form.append(key, String(value));
+      }
+    }
+  }
   return request('/validate-geometry', { method: 'POST', body: form });
 }
 
@@ -81,12 +98,15 @@ export function generateFromText(prompt) {
 /**
  * Re-codegen corrected geometry from a full DSL payload and re-validate it.
  * @param {object} dsl Full ArchitecturalDSL payload (JSON-serializable).
+ * @param {{min_height?:number, max_height?:number, min_thickness?:number, max_thickness?:number}} [thresholds]
+ *   Optional thresholds merged into the JSON body under a `thresholds` key;
+ *   the SAME thresholds apply to both the re-validate passes.
  * @returns {Promise<{status: string, report: object, fixes: object[]}>}
  */
-export function autocorrect(dsl) {
+export function autocorrect(dsl, thresholds) {
   return request('/autocorrect', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(dsl),
+    body: JSON.stringify({ ...dsl, ...(thresholds ? { thresholds } : {}) }),
   });
 }

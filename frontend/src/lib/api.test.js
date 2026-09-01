@@ -59,6 +59,45 @@ describe('validateGeometry', () => {
 
     expect(result).toEqual({ status: 'pass', report: { objects: [] } });
   });
+
+  it('appends the 4 threshold fields to FormData when thresholds are provided', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ status: 'pass', report: { objects: [] } }));
+
+    const file = new File(['v 0 0 0\n'], 'wall.obj', { type: 'text/plain' });
+    const thresholds = {
+      min_height: 2.5,
+      max_height: 0,
+      min_thickness: 0.15,
+      max_thickness: 0.5,
+    };
+    await validateGeometry(file, thresholds);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/validate-geometry');
+
+    const form = options.body;
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.has('file')).toBe(true);
+    // 0 is sent as "0" (0 = unenforced on the backend), not omitted.
+    expect(form.get('min_height')).toBe('2.5');
+    expect(form.get('max_height')).toBe('0');
+    expect(form.get('min_thickness')).toBe('0.15');
+    expect(form.get('max_thickness')).toBe('0.5');
+  });
+
+  it('omits threshold fields when no thresholds are provided', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ status: 'pass', report: { objects: [] } }));
+
+    const file = new File(['v 0 0 0\n'], 'wall.obj');
+    await validateGeometry(file);
+
+    const [, options] = fetchMock.mock.calls[0];
+    const form = options.body;
+    expect(form.has('min_height')).toBe(false);
+    expect(form.has('max_height')).toBe(false);
+    expect(form.has('min_thickness')).toBe(false);
+    expect(form.has('max_thickness')).toBe(false);
+  });
 });
 
 describe('autocorrect', () => {
@@ -78,6 +117,36 @@ describe('autocorrect', () => {
     expect(JSON.parse(options.body)).toEqual(dsl);
 
     expect(result).toEqual({ status: 'violations', report: {}, fixes: [{ wall_id: 'w1' }] });
+  });
+
+  it('merges thresholds into the JSON body when thresholds are provided', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ status: 'violations', report: {}, fixes: [] }),
+    );
+
+    const dsl = { walls: [{ id: 'wall_1', height: 1.5 }], floors: [] };
+    const thresholds = { min_height: 2, max_height: 0, min_thickness: 0.1, max_thickness: 0 };
+    const result = await autocorrect(dsl, thresholds);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/autocorrect');
+    const body = JSON.parse(options.body);
+    expect(body.walls).toEqual(dsl.walls);
+    expect(body.floors).toEqual([]);
+    expect(body.thresholds).toEqual(thresholds);
+
+    expect(result).toEqual({ status: 'violations', report: {}, fixes: [] });
+  });
+
+  it('omits the thresholds key when no thresholds are provided', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ status: 'pass', report: {}, fixes: [] }));
+
+    const dsl = { walls: [{ id: 'wall_1', height: 1.5 }], floors: [] };
+    await autocorrect(dsl);
+
+    const [, options] = fetchMock.mock.calls[0];
+    expect(JSON.parse(options.body)).toEqual(dsl);
+    expect('thresholds' in JSON.parse(options.body)).toBe(false);
   });
 });
 
